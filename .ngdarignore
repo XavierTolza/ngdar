@@ -1,0 +1,5 @@
+# Files matching these patterns will be ignored by `ngdar add`
+*.log
+tmp/
+*.swp
+.DS_Store
