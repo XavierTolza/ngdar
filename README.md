@@ -1,6 +1,6 @@
 # NGDAR — New Generation Disk Archiving
 
-[![CI](https://github.com/OpenHands/ngdar/actions/workflows/ci.yml/badge.svg)](https://github.com/OpenHands/ngdar/actions/workflows/ci.yml)
+[![CI](https://github.com/XavierTolza/ngdar/actions/workflows/ci.yml/badge.svg)](https://github.com/XavierTolza/ngdar/actions/workflows/ci.yml)
 
 **NGDAR** is a Git-like incremental archiving tool for massive binary files. It produces standard `.tar` archives suitable for long-term cold storage (DVD, LTO tape, cloud). Unlike traditional backup tools, NGDAR tracks file history through content-addressed metadata, making it possible to know exactly which volume a file was written to — even decades later, with nothing more than a plain text editor.
 
