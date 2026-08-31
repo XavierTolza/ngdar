@@ -72,13 +72,10 @@ pub fn list_untracked(root: &Path, tracked: &[String]) -> Result<Vec<String>, Ng
     let ignore_rules = IgnoreRules::load(root)?;
     let mut untracked = Vec::new();
 
-    for entry in walkdir::WalkDir::new(root)
-        .into_iter()
-        .filter_entry(|e| {
-            let name = e.file_name().to_str().unwrap_or("");
-            !name.starts_with(".ngdar")
-        })
-    {
+    for entry in walkdir::WalkDir::new(root).into_iter().filter_entry(|e| {
+        let name = e.file_name().to_str().unwrap_or("");
+        !name.starts_with(".ngdar")
+    }) {
         let entry = entry?;
         if entry.file_type().is_dir() {
             continue;

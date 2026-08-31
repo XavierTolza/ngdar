@@ -1,7 +1,6 @@
 /// End-to-end tests for NGDAR CLI workflow.
 ///
 /// Tests the full lifecycle: init → add → pack → extract → verify.
-
 use std::path::Path;
 use std::process::Command;
 
@@ -18,7 +17,10 @@ fn run_ngdar(dir: &Path, args: &[&str]) -> Result<String, String> {
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
     if !output.status.success() {
-        return Err(format!("ngdar failed (exit {}): {}{}", output.status, stderr, stdout));
+        return Err(format!(
+            "ngdar failed (exit {}): {}{}",
+            output.status, stderr, stdout
+        ));
     }
 
     Ok(stdout)
@@ -55,12 +57,19 @@ fn test_full_workflow() {
 
     // --- ngdar pack ---
     let tar_path = root.join("session_001.tar");
-    let out = run_ngdar(&root, &[
-        "pack",
-        "--vol-id", "DVD-001",
-        "--out", tar_path.to_str().unwrap(),
-        "-m", "First archival session"
-    ]).unwrap();
+    let out = run_ngdar(
+        &root,
+        &[
+            "pack",
+            "--vol-id",
+            "DVD-001",
+            "--out",
+            tar_path.to_str().unwrap(),
+            "-m",
+            "First archival session",
+        ],
+    )
+    .unwrap();
     assert!(out.contains("Created archive"));
     assert!(tar_path.exists());
 
@@ -77,14 +86,26 @@ fn test_full_workflow() {
     assert!(output.status.success(), "tar extraction failed");
 
     // Verify .ngdar metadata is in the archive
-    assert!(extract_dir.join(".ngdar").is_dir(), ".ngdar should be in the archive");
+    assert!(
+        extract_dir.join(".ngdar").is_dir(),
+        ".ngdar should be in the archive"
+    );
     assert!(extract_dir.join(".ngdar/repository_id").exists());
     assert!(extract_dir.join(".ngdar/objects").is_dir());
 
     // Verify data files are in the archive
-    assert!(extract_dir.join("data/README.txt").exists(), "data/README.txt missing");
-    assert!(extract_dir.join("data/docs/note.txt").exists(), "data/docs/note.txt missing");
-    assert!(extract_dir.join("data/large.bin").exists(), "data/large.bin missing");
+    assert!(
+        extract_dir.join("data/README.txt").exists(),
+        "data/README.txt missing"
+    );
+    assert!(
+        extract_dir.join("data/docs/note.txt").exists(),
+        "data/docs/note.txt missing"
+    );
+    assert!(
+        extract_dir.join("data/large.bin").exists(),
+        "data/large.bin missing"
+    );
 
     // Verify file contents
     let readme_content = std::fs::read_to_string(extract_dir.join("data/README.txt")).unwrap();
@@ -116,12 +137,19 @@ fn test_full_workflow() {
     assert!(out.contains("added"));
 
     let tar2_path = root.join("session_002.tar");
-    let out = run_ngdar(&root, &[
-        "pack",
-        "--vol-id", "DVD-002",
-        "--out", tar2_path.to_str().unwrap(),
-        "-m", "Second archival session"
-    ]).unwrap();
+    let out = run_ngdar(
+        &root,
+        &[
+            "pack",
+            "--vol-id",
+            "DVD-002",
+            "--out",
+            tar2_path.to_str().unwrap(),
+            "-m",
+            "Second archival session",
+        ],
+    )
+    .unwrap();
     assert!(out.contains("Created archive"));
     assert!(tar2_path.exists());
 
@@ -138,9 +166,15 @@ fn test_full_workflow() {
     // Second archive should have ALL metadata (complete history)
     assert!(extract2_dir.join(".ngdar").is_dir());
     // But only the new file in data/
-    assert!(extract2_dir.join("data/new_file.txt").exists(), "data/new_file.txt missing");
+    assert!(
+        extract2_dir.join("data/new_file.txt").exists(),
+        "data/new_file.txt missing"
+    );
     // Should NOT have old files in data/
-    assert!(!extract2_dir.join("data/README.txt").exists(), "data/README.txt should NOT be in incremental data");
+    assert!(
+        !extract2_dir.join("data/README.txt").exists(),
+        "data/README.txt should NOT be in incremental data"
+    );
 
     // Verify the second archive also contains the volume ID
     let objects_dir2 = extract2_dir.join(".ngdar/objects");
@@ -155,5 +189,8 @@ fn test_full_workflow() {
             }
         }
     }
-    assert!(found_dvd002, "Second archive should contain Meta with volume_id DVD-002");
+    assert!(
+        found_dvd002,
+        "Second archive should contain Meta with volume_id DVD-002"
+    );
 }

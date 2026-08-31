@@ -16,7 +16,6 @@ pub struct Repository {
     pub objects_path: PathBuf,
     pub head_path: PathBuf,
     pub index_path: PathBuf,
-    pub repo_id_path: PathBuf,
     pub repo_id: String,
 }
 
@@ -51,7 +50,6 @@ impl Repository {
             objects_path: ngdar_path.join(OBJECTS_DIR),
             head_path: ngdar_path.join(HEAD_FILE),
             index_path: ngdar_path.join(INDEX_FILE),
-            repo_id_path,
             ngdar_path,
             repo_id,
         })
@@ -84,7 +82,6 @@ impl Repository {
             objects_path,
             head_path: ngdar_path.join(HEAD_FILE),
             index_path: ngdar_path.join(INDEX_FILE),
-            repo_id_path: ngdar_path.join(REPO_ID_FILE),
             ngdar_path,
             repo_id,
         })
@@ -126,14 +123,17 @@ impl Repository {
     /// Read the current index (staging area).
     pub fn read_index(&self) -> Result<Vec<String>, NgdarError> {
         let content = std::fs::read_to_string(&self.index_path)?;
-        Ok(content.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect())
+        Ok(content
+            .lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect())
     }
 
     /// Write the index.
     pub fn write_index(&self, entries: &[String]) -> Result<(), NgdarError> {
         std::fs::write(&self.index_path, entries.join("\n"))?;
         Ok(())
-
     }
 
     /// Clear the index.

@@ -6,7 +6,6 @@ use std::path::Path;
 /// Object storage — each object is stored as a text file named by its BLAKE3
 /// hash in `.ngdar/objects/<first-two-chars>/<rest-of-hash>`.
 /// ---------------------------------------------------------------------------
-
 /// Compute the storage path for an object given its hex hash.
 pub fn object_path(objects_dir: &Path, hex_hash: &str) -> std::path::PathBuf {
     let (prefix, rest) = hex_hash.split_at(2);
@@ -30,9 +29,8 @@ pub fn write_object(objects_dir: &Path, content: &str) -> Result<String, NgdarEr
 /// Read an object from the store by its hex hash.
 pub fn read_object(objects_dir: &Path, hex_hash: &str) -> Result<String, NgdarError> {
     let path = object_path(objects_dir, hex_hash);
-    std::fs::read_to_string(&path).map_err(|e| {
-        NgdarError::Other(format!("Object not found {}: {}", hex_hash, e))
-    })
+    std::fs::read_to_string(&path)
+        .map_err(|e| NgdarError::Other(format!("Object not found {}: {}", hex_hash, e)))
 }
 
 /// ---------------------------------------------------------------------------
@@ -49,8 +47,20 @@ pub struct Meta {
 }
 
 impl Meta {
-    pub fn new(size: u64, mtime: i64, permissions: u32, binary_hash: String, volume_id: String) -> Self {
-        Meta { size, mtime, permissions, binary_hash, volume_id }
+    pub fn new(
+        size: u64,
+        mtime: i64,
+        permissions: u32,
+        binary_hash: String,
+        volume_id: String,
+    ) -> Self {
+        Meta {
+            size,
+            mtime,
+            permissions,
+            binary_hash,
+            volume_id,
+        }
     }
 
     /// Serialize to the text format used in object storage.
@@ -66,8 +76,9 @@ impl Meta {
         )
     }
 
-    /// Parse from the text format.
-    pub fn from_text(text: &str) -> Result<Self, NgdarError> {
+    /// Parse from the text format. Only used in tests.
+    #[cfg(test)]
+    pub(crate) fn from_text(text: &str) -> Result<Self, NgdarError> {
         let mut size = None;
         let mut mtime = None;
         let mut permissions = None;
@@ -81,9 +92,26 @@ impl Meta {
             }
             if let Some((key, value)) = line.split_once(' ') {
                 match key {
-                    "size" => size = Some(value.parse::<u64>().map_err(|_| NgdarError::Parse("size".into()))?),
-                    "mtime" => mtime = Some(value.parse::<i64>().map_err(|_| NgdarError::Parse("mtime".into()))?),
-                    "permissions" => permissions = Some(u32::from_str_radix(value, 8).map_err(|_| NgdarError::Parse("permissions".into()))?),
+                    "size" => {
+                        size = Some(
+                            value
+                                .parse::<u64>()
+                                .map_err(|_| NgdarError::Parse("size".into()))?,
+                        )
+                    }
+                    "mtime" => {
+                        mtime = Some(
+                            value
+                                .parse::<i64>()
+                                .map_err(|_| NgdarError::Parse("mtime".into()))?,
+                        )
+                    }
+                    "permissions" => {
+                        permissions = Some(
+                            u32::from_str_radix(value, 8)
+                                .map_err(|_| NgdarError::Parse("permissions".into()))?,
+                        )
+                    }
                     "binary_hash" => binary_hash = Some(value.to_string()),
                     "volume_id" => volume_id = Some(value.to_string()),
                     _ => {}
@@ -94,8 +122,10 @@ impl Meta {
         Ok(Meta {
             size: size.ok_or_else(|| NgdarError::Parse("Missing size".into()))?,
             mtime: mtime.ok_or_else(|| NgdarError::Parse("Missing mtime".into()))?,
-            permissions: permissions.ok_or_else(|| NgdarError::Parse("Missing permissions".into()))?,
-            binary_hash: binary_hash.ok_or_else(|| NgdarError::Parse("Missing binary_hash".into()))?,
+            permissions: permissions
+                .ok_or_else(|| NgdarError::Parse("Missing permissions".into()))?,
+            binary_hash: binary_hash
+                .ok_or_else(|| NgdarError::Parse("Missing binary_hash".into()))?,
             volume_id: volume_id.ok_or_else(|| NgdarError::Parse("Missing volume_id".into()))?,
         })
     }
@@ -120,11 +150,17 @@ pub struct Tree {
 
 impl Tree {
     pub fn new() -> Self {
-        Tree { entries: Vec::new() }
+        Tree {
+            entries: Vec::new(),
+        }
     }
 
     pub fn add(&mut self, kind: &str, hash: String, name: String) {
-        self.entries.push(TreeEntry { kind: kind.to_string(), hash, name });
+        self.entries.push(TreeEntry {
+            kind: kind.to_string(),
+            hash,
+            name,
+        });
         self.entries.sort_by(|a, b| a.name.cmp(&b.name));
     }
 
@@ -181,7 +217,15 @@ impl Commit {
         timestamp: i64,
         message: String,
     ) -> Self {
-        Commit { tree_hash, parent_hash, author, os, tool_version, timestamp, message }
+        Commit {
+            tree_hash,
+            parent_hash,
+            author,
+            os,
+            tool_version,
+            timestamp,
+            message,
+        }
     }
 
     pub fn to_text(&self) -> String {
@@ -242,7 +286,13 @@ impl Commit {
                     "author" => author = Some(value.to_string()),
                     "os" => os = Some(value.to_string()),
                     "tool_version" => tool_version = Some(value.to_string()),
-                    "timestamp" => timestamp = Some(value.parse::<i64>().map_err(|_| NgdarError::Parse("timestamp".into()))?),
+                    "timestamp" => {
+                        timestamp = Some(
+                            value
+                                .parse::<i64>()
+                                .map_err(|_| NgdarError::Parse("timestamp".into()))?,
+                        )
+                    }
                     _ => {}
                 }
             }
@@ -253,7 +303,8 @@ impl Commit {
             parent_hash,
             author: author.ok_or_else(|| NgdarError::Parse("Missing author".into()))?,
             os: os.ok_or_else(|| NgdarError::Parse("Missing os".into()))?,
-            tool_version: tool_version.ok_or_else(|| NgdarError::Parse("Missing tool_version".into()))?,
+            tool_version: tool_version
+                .ok_or_else(|| NgdarError::Parse("Missing tool_version".into()))?,
             timestamp: timestamp.ok_or_else(|| NgdarError::Parse("Missing timestamp".into()))?,
             message,
         })
@@ -263,7 +314,6 @@ impl Commit {
 /// ---------------------------------------------------------------------------
 /// High-level helpers for building tree objects from index entries.
 /// ---------------------------------------------------------------------------
-
 /// Build a tree structure from a list of staged (indexed) files.
 /// Returns the tree hash and a list of (meta_hash, file_rel_path) for all leaf files.
 pub fn build_tree_from_index(
@@ -271,11 +321,15 @@ pub fn build_tree_from_index(
     staged_files: &[(&str, &str)], // (rel_path, meta_hash) pairs
 ) -> Result<(String, Vec<(String, String)>), NgdarError> {
     // Group by directory
-    let mut dirs: std::collections::BTreeMap<String, Vec<TreeEntry>> = std::collections::BTreeMap::new();
+    let mut dirs: std::collections::BTreeMap<String, Vec<TreeEntry>> =
+        std::collections::BTreeMap::new();
 
     for (rel_path, meta_hash) in staged_files {
         let path = std::path::Path::new(rel_path);
-        let parent = path.parent().map(|p| p.to_str().unwrap_or("")).unwrap_or("");
+        let parent = path
+            .parent()
+            .map(|p| p.to_str().unwrap_or(""))
+            .unwrap_or("");
         let filename = path.file_name().unwrap().to_str().unwrap_or("");
 
         let entry = TreeEntry {
@@ -284,17 +338,16 @@ pub fn build_tree_from_index(
             name: filename.to_string(),
         };
 
-        dirs.entry(parent.to_string())
-            .or_default()
-            .push(entry);
+        dirs.entry(parent.to_string()).or_default().push(entry);
     }
 
     // Build trees bottom-up
-    let mut tree_cache: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut tree_cache: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
 
     // Get all unique directory paths sorted longest-first (bottom-up)
     let mut dir_paths: Vec<String> = dirs.keys().cloned().collect();
-    dir_paths.sort_by(|a, b| b.len().cmp(&a.len())); // reverse sort
+    dir_paths.sort_by_key(|a| std::cmp::Reverse(a.len())); // reverse sort
 
     for dir_path in &dir_paths {
         let mut tree = Tree::new();
@@ -304,7 +357,11 @@ pub fn build_tree_from_index(
             }
         }
         // Also add subdirectory trees that we already built
-        let prefix = if dir_path.is_empty() { String::new() } else { format!("{}/", dir_path) };
+        let prefix = if dir_path.is_empty() {
+            String::new()
+        } else {
+            format!("{}/", dir_path)
+        };
         for (sub_path, sub_hash) in &tree_cache {
             if let Some(rest) = sub_path.strip_prefix(&prefix) {
                 if !rest.contains('/') {
@@ -325,7 +382,9 @@ pub fn build_tree_from_index(
         .map(|(path, hash)| (hash.to_string(), path.to_string()))
         .collect();
 
-    let root_hash = tree_cache.get("").cloned()
+    let root_hash = tree_cache
+        .get("")
+        .cloned()
         .or_else(|| tree_cache.get(".").cloned())
         .unwrap_or_else(|| {
             // Empty tree
@@ -342,7 +401,13 @@ mod tests {
 
     #[test]
     fn test_meta_roundtrip() {
-        let meta = Meta::new(1048576, 1788118000, 0o644, "a1b2c3d4e5f6".into(), "DVD-001".into());
+        let meta = Meta::new(
+            1048576,
+            1788118000,
+            0o644,
+            "a1b2c3d4e5f6".into(),
+            "DVD-001".into(),
+        );
         let text = meta.to_text();
         let parsed = Meta::from_text(&text).unwrap();
         assert_eq!(parsed.size, 1048576);
@@ -402,7 +467,8 @@ mod tests {
     fn test_write_read_object() {
         let dir = tempfile::TempDir::new().unwrap();
         let objects_dir = dir.path().join("objects");
-        let content = "type meta\nsize 100\nmtime 1000\npermissions 644\nbinary_hash abc\nvolume_id DVD\n";
+        let content =
+            "type meta\nsize 100\nmtime 1000\npermissions 644\nbinary_hash abc\nvolume_id DVD\n";
         let hash = write_object(&objects_dir, content).unwrap();
         assert_eq!(hash.len(), 64);
         let read = read_object(&objects_dir, &hash).unwrap();

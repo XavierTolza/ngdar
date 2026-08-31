@@ -64,11 +64,7 @@ impl CacheStore {
 
     /// Insert or update an entry.
     pub fn insert(&mut self, size: u64, mtime: i64, hash: String, rel_path: String) {
-        if let Some(existing) = self
-            .entries
-            .iter_mut()
-            .find(|e| e.path == rel_path)
-        {
+        if let Some(existing) = self.entries.iter_mut().find(|e| e.path == rel_path) {
             existing.size = size;
             existing.mtime = mtime;
             existing.hash = hash;

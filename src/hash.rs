@@ -20,8 +20,9 @@ pub fn hash_file(path: &std::path::Path) -> Result<Hash, crate::error::NgdarErro
     Ok(hasher.finalize())
 }
 
+#[cfg(test)]
 /// Compute the BLAKE3 hash of a byte slice.
-pub fn hash_bytes(data: &[u8]) -> Hash {
+pub(crate) fn hash_bytes(data: &[u8]) -> Hash {
     blake3::hash(data)
 }
 

@@ -8,8 +8,6 @@ pub enum NgdarError {
     Walkdir(walkdir::Error),
     Hash(String),
     Parse(String),
-    Index(String),
-    Cache(String),
     Config(String),
     Other(String),
 }
@@ -17,13 +15,13 @@ pub enum NgdarError {
 impl fmt::Display for NgdarError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            NgdarError::NotARepository => write!(f, "Not an ngdar repository (or any parent): .ngdar"),
+            NgdarError::NotARepository => {
+                write!(f, "Not an ngdar repository (or any parent): .ngdar")
+            }
             NgdarError::Io(e) => write!(f, "IO error: {}", e),
             NgdarError::Walkdir(e) => write!(f, "Walkdir error: {}", e),
             NgdarError::Hash(s) => write!(f, "Hash error: {}", s),
             NgdarError::Parse(s) => write!(f, "Parse error: {}", s),
-            NgdarError::Index(s) => write!(f, "Index error: {}", s),
-            NgdarError::Cache(s) => write!(f, "Cache error: {}", s),
             NgdarError::Config(s) => write!(f, "Config error: {}", s),
             NgdarError::Other(s) => write!(f, "{}", s),
         }

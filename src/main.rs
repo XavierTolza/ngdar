@@ -17,9 +17,11 @@ fn main() {
         Commands::Init => commands::init(),
         Commands::Status => commands::status(),
         Commands::Add { paths } => commands::add(paths),
-        Commands::Pack { vol_id, out, message } => {
-            commands::pack(vol_id, out, message)
-        }
+        Commands::Pack {
+            vol_id,
+            out,
+            message,
+        } => commands::pack(vol_id, out, message),
     };
 
     if let Err(e) = result {
