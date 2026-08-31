@@ -55,7 +55,10 @@ pub fn init() -> Result<(), NgdarError> {
         return Err(NgdarError::Config("Repository already exists".into()));
     }
     let repo = Repository::init(&cwd)?;
-    println!("Initialized empty ngdar repository in {}", cwd.join(crate::config::NGDAR_DIR).display());
+    println!(
+        "Initialized empty ngdar repository in {}",
+        cwd.join(crate::config::NGDAR_DIR).display()
+    );
     println!("Repository ID: {}", repo.repo_id);
     Ok(())
 }
@@ -75,12 +78,12 @@ pub fn status() -> Result<(), NgdarError> {
     let head_hash = repo.read_head()?;
     let mut committed_files: Vec<String> = Vec::new();
     if let Some(ref hash) = head_hash {
-            let commit_text = objects::read_object(&repo.objects_path, hash)?;
-            let commit = Commit::from_text(&commit_text)?;
-            let tree_text = objects::read_object(&repo.objects_path, &commit.tree_hash)?;
-            let tree = objects::Tree::from_text(&tree_text)?;
-            // Collect all meta hashes from the tree recursively
-            collect_meta_hashes(&repo.objects_path, &tree, &mut committed_files, &repo.path)?;
+        let commit_text = objects::read_object(&repo.objects_path, hash)?;
+        let commit = Commit::_from_text(&commit_text)?;
+        let tree_text = objects::read_object(&repo.objects_path, &commit.tree_hash)?;
+        let tree = objects::Tree::_from_text(&tree_text)?;
+        // Collect all meta hashes from the tree recursively
+        collect_meta_hashes(&repo.objects_path, &tree, &mut committed_files, &repo.path)?;
     }
 
     // Determine unstaged: files that are in committed_files but modified on disk
@@ -158,7 +161,7 @@ fn collect_meta_hashes(
     objects_dir: &Path,
     tree: &objects::Tree,
     results: &mut Vec<String>,
-    repo_root: &Path,
+    _repo_root: &Path,
 ) -> Result<(), NgdarError> {
     for entry in &tree.entries {
         if entry.kind == "meta" {
@@ -176,8 +179,8 @@ fn collect_meta_hashes(
             results.push(entry.name.clone());
         } else if entry.kind == "tree" {
             let sub_text = objects::read_object(objects_dir, &entry.hash)?;
-            let sub_tree = objects::Tree::from_text(&sub_text)?;
-            collect_meta_hashes(objects_dir, &sub_tree, results, repo_root)?;
+            let sub_tree = objects::Tree::_from_text(&sub_text)?;
+            collect_meta_hashes(objects_dir, &sub_tree, results, _repo_root)?;
         }
     }
     Ok(())
@@ -204,9 +207,9 @@ pub fn add(paths: &[String]) -> Result<(), NgdarError> {
         };
 
         // Get relative path
-        let rel_path = path
-            .strip_prefix(&repo.path)
-            .map_err(|_| NgdarError::Other(format!("Path '{}' is outside the repository", path_str)))?;
+        let rel_path = path.strip_prefix(&repo.path).map_err(|_| {
+            NgdarError::Other(format!("Path '{}' is outside the repository", path_str))
+        })?;
         let rel_str = rel_path.to_str().unwrap_or("");
 
         if rel_str.starts_with(".ngdar") || rel_str == ".ngdarignore" {
@@ -221,13 +224,10 @@ pub fn add(paths: &[String]) -> Result<(), NgdarError> {
 
         if path.is_dir() {
             // Walk directory recursively
-            for entry in walkdir::WalkDir::new(&path)
-                .into_iter()
-                .filter_entry(|e| {
-                    let name = e.file_name().to_str().unwrap_or("");
-                    !name.starts_with(".ngdar")
-                })
-            {
+            for entry in walkdir::WalkDir::new(&path).into_iter().filter_entry(|e| {
+                let name = e.file_name().to_str().unwrap_or("");
+                !name.starts_with(".ngdar")
+            }) {
                 let entry = entry?;
                 if entry.file_type().is_dir() {
                     continue;
@@ -308,7 +308,9 @@ pub fn pack(vol_id: &str, out: &str, message: &str) -> Result<(), NgdarError> {
     // Read index
     let index = repo.read_index()?;
     if index.is_empty() {
-        return Err(NgdarError::Other("Nothing to pack. Use 'ngdar add' first.".to_string()));
+        return Err(NgdarError::Other(
+            "Nothing to pack. Use 'ngdar add' first.".to_string(),
+        ));
     }
 
     println!("Packing {} file(s)...", index.len());
@@ -320,7 +322,8 @@ pub fn pack(vol_id: &str, out: &str, message: &str) -> Result<(), NgdarError> {
     }
 
     // Phase 1: Create Meta objects for each staged file
-    let mut meta_hash_for_file: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut meta_hash_for_file: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
 
     for rel_str in &index {
         let full_path = repo.path.join(rel_str);
@@ -360,7 +363,8 @@ pub fn pack(vol_id: &str, out: &str, message: &str) -> Result<(), NgdarError> {
 
     // Phase 3: Create Commit object
     let head = repo.read_head()?;
-    let author = format!("{} <{}@{}>",
+    let author = format!(
+        "{} <{}@{}>",
         std::env::var("USER").unwrap_or_else(|_| "user".into()),
         std::env::var("USER").unwrap_or_else(|_| "user".into()),
         hostname()
@@ -431,7 +435,11 @@ fn build_tar_archive(
 
         // Set the file path within the archive
         builder
-            .append_data(&mut header, data_tar_path.as_str(), std::io::Cursor::new(&file_data))
+            .append_data(
+                &mut header,
+                data_tar_path.as_str(),
+                std::io::Cursor::new(&file_data),
+            )
             .map_err(|e| NgdarError::Other(format!("TAR error: {}", e)))?;
     }
 
@@ -447,14 +455,18 @@ fn add_dir_to_tar(
     tar_prefix: &str,
     base: &Path,
 ) -> Result<(), NgdarError> {
-    for entry in walkdir::WalkDir::new(dir_path).into_iter().filter_entry(|e| {
-        let name = e.file_name().to_str().unwrap_or("");
-        !name.starts_with('.') || name == ".ngdar"
-    }) {
+    for entry in walkdir::WalkDir::new(dir_path)
+        .into_iter()
+        .filter_entry(|e| {
+            let name = e.file_name().to_str().unwrap_or("");
+            !name.starts_with('.') || name == ".ngdar"
+        })
+    {
         let entry = entry?;
-        let relative = entry.path().strip_prefix(base).map_err(|_| {
-            NgdarError::Other("Path error in tar".into())
-        })?;
+        let relative = entry
+            .path()
+            .strip_prefix(base)
+            .map_err(|_| NgdarError::Other("Path error in tar".into()))?;
         let tar_path = format!("{}/{}", tar_prefix, relative.to_str().unwrap_or(""));
 
         if entry.file_type().is_dir() {
@@ -483,7 +495,7 @@ fn add_dir_to_tar(
 }
 
 /// Extract the TAR archive for testing/restore purposes.
-pub fn extract_tar(tar_path: &Path, dest: &Path) -> Result<(), NgdarError> {
+pub fn _extract_tar(tar_path: &Path, dest: &Path) -> Result<(), NgdarError> {
     let file = std::fs::File::open(tar_path)?;
     let mut archive = tar::Archive::new(file);
     archive.unpack(dest)?;
