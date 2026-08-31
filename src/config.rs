@@ -16,8 +16,6 @@ pub struct Repository {
     pub objects_path: PathBuf,
     pub head_path: PathBuf,
     pub index_path: PathBuf,
-    #[allow(dead_code)]
-    pub repo_id_path: PathBuf,
     pub repo_id: String,
 }
 
@@ -52,7 +50,6 @@ impl Repository {
             objects_path: ngdar_path.join(OBJECTS_DIR),
             head_path: ngdar_path.join(HEAD_FILE),
             index_path: ngdar_path.join(INDEX_FILE),
-            repo_id_path,
             ngdar_path,
             repo_id,
         })
@@ -85,7 +82,6 @@ impl Repository {
             objects_path,
             head_path: ngdar_path.join(HEAD_FILE),
             index_path: ngdar_path.join(INDEX_FILE),
-            repo_id_path: ngdar_path.join(REPO_ID_FILE),
             ngdar_path,
             repo_id,
         })

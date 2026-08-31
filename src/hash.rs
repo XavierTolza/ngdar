@@ -20,8 +20,9 @@ pub fn hash_file(path: &std::path::Path) -> Result<Hash, crate::error::NgdarErro
     Ok(hasher.finalize())
 }
 
+#[cfg(test)]
 /// Compute the BLAKE3 hash of a byte slice.
-pub fn _hash_bytes(data: &[u8]) -> Hash {
+pub(crate) fn hash_bytes(data: &[u8]) -> Hash {
     blake3::hash(data)
 }
 
@@ -43,8 +44,8 @@ mod tests {
     #[test]
     fn test_hash_bytes_consistency() {
         let data = b"hello world";
-        let h1 = _hash_bytes(data);
-        let h2 = _hash_bytes(data);
+        let h1 = hash_bytes(data);
+        let h2 = hash_bytes(data);
         assert_eq!(h1, h2);
     }
 

@@ -8,8 +8,6 @@ pub enum NgdarError {
     Walkdir(walkdir::Error),
     Hash(String),
     Parse(String),
-    _Index(String),
-    _Cache(String),
     Config(String),
     Other(String),
 }
@@ -24,8 +22,6 @@ impl fmt::Display for NgdarError {
             NgdarError::Walkdir(e) => write!(f, "Walkdir error: {}", e),
             NgdarError::Hash(s) => write!(f, "Hash error: {}", s),
             NgdarError::Parse(s) => write!(f, "Parse error: {}", s),
-            NgdarError::_Index(s) => write!(f, "Index error: {}", s),
-            NgdarError::_Cache(s) => write!(f, "Cache error: {}", s),
             NgdarError::Config(s) => write!(f, "Config error: {}", s),
             NgdarError::Other(s) => write!(f, "{}", s),
         }

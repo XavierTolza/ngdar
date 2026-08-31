@@ -79,9 +79,9 @@ pub fn status() -> Result<(), NgdarError> {
     let mut committed_files: Vec<String> = Vec::new();
     if let Some(ref hash) = head_hash {
         let commit_text = objects::read_object(&repo.objects_path, hash)?;
-        let commit = Commit::_from_text(&commit_text)?;
+        let commit = Commit::from_text(&commit_text)?;
         let tree_text = objects::read_object(&repo.objects_path, &commit.tree_hash)?;
-        let tree = objects::Tree::_from_text(&tree_text)?;
+        let tree = objects::Tree::from_text(&tree_text)?;
         // Collect all meta hashes from the tree recursively
         collect_meta_hashes(&repo.objects_path, &tree, &mut committed_files, &repo.path)?;
     }
@@ -179,7 +179,7 @@ fn collect_meta_hashes(
             results.push(entry.name.clone());
         } else if entry.kind == "tree" {
             let sub_text = objects::read_object(objects_dir, &entry.hash)?;
-            let sub_tree = objects::Tree::_from_text(&sub_text)?;
+            let sub_tree = objects::Tree::from_text(&sub_text)?;
             collect_meta_hashes(objects_dir, &sub_tree, results, _repo_root)?;
         }
     }
@@ -491,13 +491,5 @@ fn add_dir_to_tar(
                 .map_err(|e| NgdarError::Other(format!("TAR error: {}", e)))?;
         }
     }
-    Ok(())
-}
-
-/// Extract the TAR archive for testing/restore purposes.
-pub fn _extract_tar(tar_path: &Path, dest: &Path) -> Result<(), NgdarError> {
-    let file = std::fs::File::open(tar_path)?;
-    let mut archive = tar::Archive::new(file);
-    archive.unpack(dest)?;
     Ok(())
 }

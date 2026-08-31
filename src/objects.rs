@@ -76,8 +76,9 @@ impl Meta {
         )
     }
 
-    /// Parse from the text format.
-    pub fn _from_text(text: &str) -> Result<Self, NgdarError> {
+    /// Parse from the text format. Only used in tests.
+    #[cfg(test)]
+    pub(crate) fn from_text(text: &str) -> Result<Self, NgdarError> {
         let mut size = None;
         let mut mtime = None;
         let mut permissions = None;
@@ -171,7 +172,7 @@ impl Tree {
         s
     }
 
-    pub fn _from_text(text: &str) -> Result<Self, NgdarError> {
+    pub fn from_text(text: &str) -> Result<Self, NgdarError> {
         let mut entries = Vec::new();
         for line in text.lines() {
             let line = line.trim();
@@ -251,7 +252,7 @@ impl Commit {
         )
     }
 
-    pub fn _from_text(text: &str) -> Result<Self, NgdarError> {
+    pub fn from_text(text: &str) -> Result<Self, NgdarError> {
         let mut tree_hash = None;
         let mut parent_hash = None;
         let mut author = None;
@@ -408,7 +409,7 @@ mod tests {
             "DVD-001".into(),
         );
         let text = meta.to_text();
-        let parsed = Meta::_from_text(&text).unwrap();
+        let parsed = Meta::from_text(&text).unwrap();
         assert_eq!(parsed.size, 1048576);
         assert_eq!(parsed.mtime, 1788118000);
         assert_eq!(parsed.permissions, 0o644);
@@ -422,7 +423,7 @@ mod tests {
         tree.add("meta", "abc123".into(), "file.txt".into());
         tree.add("tree", "def456".into(), "subdir".into());
         let text = tree.to_text();
-        let parsed = Tree::_from_text(&text).unwrap();
+        let parsed = Tree::from_text(&text).unwrap();
         assert_eq!(parsed.entries.len(), 2);
         assert_eq!(parsed.entries[0].name, "file.txt");
         assert_eq!(parsed.entries[1].name, "subdir");
@@ -440,7 +441,7 @@ mod tests {
             "Test commit message.".into(),
         );
         let text = commit.to_text();
-        let parsed = Commit::_from_text(&text).unwrap();
+        let parsed = Commit::from_text(&text).unwrap();
         assert_eq!(parsed.tree_hash, "treehash123");
         assert_eq!(parsed.parent_hash.unwrap(), "parent456");
         assert_eq!(parsed.message, "Test commit message.");
