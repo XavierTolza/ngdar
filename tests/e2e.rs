@@ -45,15 +45,41 @@ fn test_full_workflow() {
 
     // --- ngdar add ---
     let out = run_ngdar(&root, &["add", "README.txt"]).unwrap();
-    assert!(out.contains("added"));
+    assert!(
+        out.contains("added: README.txt"),
+        "add output missing filename: {out}"
+    );
     let out = run_ngdar(&root, &["add", "docs/note.txt"]).unwrap();
-    assert!(out.contains("added"));
+    assert!(
+        out.contains("added: docs/note.txt"),
+        "add output missing filename: {out}"
+    );
     let out = run_ngdar(&root, &["add", "large.bin"]).unwrap();
-    assert!(out.contains("added"));
+    assert!(
+        out.contains("added: large.bin"),
+        "add output missing filename: {out}"
+    );
 
     // --- ngdar status (staged files) ---
     let out = run_ngdar(&root, &["status"]).unwrap();
-    assert!(out.contains("Staged files"));
+    assert!(
+        out.contains("Staged files:"),
+        "status should show staged section"
+    );
+    assert!(out.contains("README.txt"), "status should list README.txt");
+    assert!(
+        out.contains("docs/note.txt"),
+        "status should list docs/note.txt"
+    );
+    assert!(out.contains("large.bin"), "status should list large.bin");
+    assert!(
+        out.contains("(no unstaged changes)"),
+        "status should show no unstaged"
+    );
+    assert!(
+        out.contains("(no untracked files)"),
+        "status should show no untracked"
+    );
 
     // --- ngdar pack ---
     let tar_path = root.join("session_001.tar");
@@ -72,6 +98,13 @@ fn test_full_workflow() {
     .unwrap();
     assert!(out.contains("Created archive"));
     assert!(tar_path.exists());
+
+    // --- After pack, index should be empty ---
+    let out = run_ngdar(&root, &["status"]).unwrap();
+    assert!(
+        out.contains("(nothing staged)"),
+        "after pack, nothing should be staged: {out}"
+    );
 
     // --- Verify TAR contents ---
     let extract_dir = root.join("extract");
@@ -134,7 +167,21 @@ fn test_full_workflow() {
     // --- Second session: add more files ---
     std::fs::write(root.join("new_file.txt"), "second session file").unwrap();
     let out = run_ngdar(&root, &["add", "new_file.txt"]).unwrap();
-    assert!(out.contains("added"));
+    assert!(
+        out.contains("added: new_file.txt"),
+        "second add missing filename: {out}"
+    );
+
+    // Status should show only new_file.txt staged
+    let out = run_ngdar(&root, &["status"]).unwrap();
+    assert!(
+        out.contains("new_file.txt"),
+        "status should list new_file.txt in staged: {out}"
+    );
+    assert!(
+        out.contains("(no unstaged changes)"),
+        "old committed files should not appear unstaged"
+    );
 
     let tar2_path = root.join("session_002.tar");
     let out = run_ngdar(
@@ -152,6 +199,13 @@ fn test_full_workflow() {
     .unwrap();
     assert!(out.contains("Created archive"));
     assert!(tar2_path.exists());
+
+    // --- After second pack, index should be empty again ---
+    let out = run_ngdar(&root, &["status"]).unwrap();
+    assert!(
+        out.contains("(nothing staged)"),
+        "after second pack, nothing should be staged: {out}"
+    );
 
     // Extract second archive
     let extract2_dir = root.join("extract2");

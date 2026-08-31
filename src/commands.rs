@@ -83,7 +83,7 @@ pub fn status() -> Result<(), NgdarError> {
         let tree_text = objects::read_object(&repo.objects_path, &commit.tree_hash)?;
         let tree = objects::Tree::from_text(&tree_text)?;
         // Collect all meta hashes from the tree recursively
-        collect_meta_hashes(&repo.objects_path, &tree, &mut committed_files, &repo.path)?;
+        collect_meta_hashes(&repo.objects_path, &tree, &mut committed_files, "")?;
     }
 
     // Determine unstaged: files that are in committed_files but modified on disk
@@ -161,26 +161,25 @@ fn collect_meta_hashes(
     objects_dir: &Path,
     tree: &objects::Tree,
     results: &mut Vec<String>,
-    _repo_root: &Path,
+    prefix: &str,
 ) -> Result<(), NgdarError> {
     for entry in &tree.entries {
         if entry.kind == "meta" {
-            let _meta_text = objects::read_object(objects_dir, &entry.hash)?;
-            // Find the original relative path by looking at the meta's binary_hash
-            // We store the relative path as an entry in the tree
-            // Actually, the file path is the path through the tree hierarchy.
-            // We'll reconstruct it differently.
-            // For now, let's look at the tree structure:
-            // The file's name is entry.name, but its full path needs to be
-            // reconstructed from the tree hierarchy.
-            // Since we don't have the hierarchy here, we store it in the staged files list.
-            // Let's just return the name for now - the actual reconstruction
-            // is done via the pack process.
-            results.push(entry.name.clone());
+            let full = if prefix.is_empty() {
+                entry.name.clone()
+            } else {
+                format!("{}/{}", prefix, entry.name)
+            };
+            results.push(full);
         } else if entry.kind == "tree" {
             let sub_text = objects::read_object(objects_dir, &entry.hash)?;
             let sub_tree = objects::Tree::from_text(&sub_text)?;
-            collect_meta_hashes(objects_dir, &sub_tree, results, _repo_root)?;
+            let new_prefix = if prefix.is_empty() {
+                entry.name.clone()
+            } else {
+                format!("{}/{}", prefix, entry.name)
+            };
+            collect_meta_hashes(objects_dir, &sub_tree, results, &new_prefix)?;
         }
     }
     Ok(())
