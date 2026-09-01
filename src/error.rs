@@ -1,14 +1,30 @@
+//! Error types for NGDAR operations.
+//!
+//! Defines [`NgdarError`], a unified error enum that wraps I/O, parsing,
+//! filesystem-walk, and domain-specific errors with automatic conversions.
+
 use std::fmt;
 use std::io;
 
+/// Unified error type for all NGDAR operations.
+///
+/// Provides automatic conversion from [`io::Error`] and [`walkdir::Error`]
+/// via [`From`] implementations.
 #[derive(Debug)]
 pub enum NgdarError {
+    /// No `.ngdar` directory found in the current or any parent directory.
     NotARepository,
+    /// Wraps an I/O error.
     Io(io::Error),
+    /// Wraps a filesystem walk error.
     Walkdir(walkdir::Error),
+    /// A hashing-related error with a message.
     Hash(String),
+    /// A parsing error with a message.
     Parse(String),
+    /// A configuration error with a message.
     Config(String),
+    /// Any other error with a message.
     Other(String),
 }
 

@@ -1,6 +1,7 @@
 /// Full end-to-end workflow: init -> add -> pack -> verify -> second session.
 mod common;
 
+use common::run_ngdar;
 use std::path::Path;
 use std::process::Command;
 
@@ -149,4 +150,51 @@ fn test_full_workflow() {
     // .ngdar/ must contain ALL metadata (full history), including both volume IDs
     assert_meta_has_volume_id(&ext2, "DVD-002");
     assert_meta_has_volume_id(&ext2, "DVD-001");
+}
+
+/// End-to-end test for `ngdar archive-content <archive>`.
+///
+/// Creates a full workflow (init -> add -> pack), then inspects the
+/// resulting archive with `archive-content` and verifies the output
+/// contains expected entries.
+#[test]
+fn test_archive_content_e2e() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let root = dir.path().to_path_buf();
+
+    // Create a test file and run the full workflow
+    std::fs::write(root.join("hello.txt"), "archive content test").unwrap();
+    run_ngdar(&root, &["init"]).unwrap();
+    run_ngdar(&root, &["add", "hello.txt"]).unwrap();
+
+    let tar_path = root.join("test_archive.tar");
+    run_ngdar(
+        &root,
+        &[
+            "pack",
+            "--vol-id",
+            "DVD-TEST-ARC",
+            "--out",
+            tar_path.to_str().unwrap(),
+            "-m",
+            "Test archive for content inspection",
+        ],
+    )
+    .unwrap();
+
+    // Now inspect the archive
+    let out = run_ngdar(&root, &["archive-content", tar_path.to_str().unwrap()]).unwrap();
+    assert!(
+        out.contains("Archive Contents"),
+        "output should show archive header"
+    );
+    assert!(
+        out.contains("hello.txt"),
+        "output should list the data file"
+    );
+    assert!(out.contains("data/"), "output should show data directory");
+    assert!(
+        out.contains(".ngdar/"),
+        "output should show .ngdar metadata"
+    );
 }

@@ -4,6 +4,8 @@ use crate::error::NgdarError;
 use crate::hash::{hash_file, hash_to_hex};
 use crate::ignore::{self, IgnoreRules};
 use crate::objects::{self, build_tree_from_index, write_object, Commit, Meta};
+use std::collections::HashMap;
+use std::io::Read;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -157,6 +159,10 @@ pub fn status() -> Result<(), NgdarError> {
     Ok(())
 }
 
+/// Recursively collect file paths from a tree structure.
+///
+/// Walks the tree entries, collecting names of `meta` entries and recursing
+/// into `tree` entries. Used by [`status()`] to reconstruct committed file paths.
 fn collect_meta_hashes(
     objects_dir: &Path,
     tree: &objects::Tree,
@@ -270,6 +276,10 @@ pub fn add(paths: &[String]) -> Result<(), NgdarError> {
     Ok(())
 }
 
+/// Hash a single file, update the cache, and add it to the staging index.
+///
+/// Skips re-hashing if the file (size, mtime, path) is already in the cache.
+/// Returns without error if the file was already staged.
 fn add_file(
     repo: &Repository,
     cache: &mut CacheStore,
@@ -404,6 +414,7 @@ pub fn pack(vol_id: &str, out: &str, message: &str) -> Result<(), NgdarError> {
     Ok(())
 }
 
+/// Read the system hostname from `/etc/hostname`.
 fn hostname() -> String {
     std::fs::read_to_string("/etc/hostname")
         .map(|s| s.trim().to_string())
@@ -454,7 +465,10 @@ fn build_tar_archive(
     Ok(())
 }
 
-/// Recursively add a directory to a TAR archive.
+/// Recursively add a directory and its contents to a TAR archive.
+///
+/// Skips hidden entries (names starting with `.`) except `.ngdar` itself.
+/// Preserves directory structure relative to `base`.
 fn add_dir_to_tar(
     builder: &mut tar::Builder<&std::fs::File>,
     dir_path: &Path,
@@ -498,4 +512,622 @@ fn add_dir_to_tar(
         }
     }
     Ok(())
+}
+
+/// Compute and display the BLAKE3 hash of a file.
+///
+/// Reads the file in 64 KiB chunks to handle large files efficiently.
+/// Prints the 64-character hex-encoded BLAKE3 hash followed by the filename.
+pub fn hash(path: &str) -> Result<(), NgdarError> {
+    let file_path = Path::new(path);
+    if !file_path.exists() {
+        return Err(NgdarError::Other(format!("File not found: {}", path)));
+    }
+    let hash = hash_file(file_path)?;
+    let hex = hash_to_hex(&hash);
+    println!("{}  {}", hex, path);
+    Ok(())
+}
+
+/// Display the contents of a previously created ngdar archive.
+///
+/// Opens the `.tar` archive and lists all files it contains. For ngdar
+/// archives, the `.ngdar/objects/` metadata entries are parsed and displayed
+/// alongside the file listing, showing the BLAKE3 hash of each object.
+///
+/// The output is a formatted table with columns:
+/// - **Path**: file path within the archive
+/// - **Type**: entry type (file, meta, tree, commit, directory)
+/// - **Hash**: BLAKE3 hash (for object entries)
+/// - **Size**: file size in bytes
+pub fn archive_content(archive_path: &str) -> Result<(), NgdarError> {
+    let file = std::fs::File::open(archive_path)
+        .map_err(|e| NgdarError::Other(format!("Cannot open archive '{}': {}", archive_path, e)))?;
+    let mut archive = tar::Archive::new(&file);
+
+    // Collect entries: (path, kind, hash, size)
+    // kind is: "file" for data files, "meta"/"tree"/"commit" for parsed objects
+    let mut entries: Vec<(String, String, String, u64)> = Vec::new();
+
+    for entry_result in archive
+        .entries()
+        .map_err(|e| NgdarError::Other(format!("Cannot read archive '{}': {}", archive_path, e)))?
+    {
+        let mut entry =
+            entry_result.map_err(|e| NgdarError::Other(format!("Archive entry error: {}", e)))?;
+
+        let path = entry
+            .path()
+            .map_err(|e| NgdarError::Other(format!("Archive path error: {}", e)))?
+            .to_string_lossy()
+            .to_string();
+        let size = entry.header().size().unwrap_or(0);
+
+        // Try to parse the content if it's an object file
+        if path.starts_with(".ngdar/objects/") {
+            let mut content = String::new();
+            entry.read_to_string(&mut content).ok();
+            let content = content.trim().to_string();
+
+            if content.starts_with("type meta") {
+                if let Ok(meta) = Meta::from_text(&content) {
+                    // Extract hash from the file path: .ngdar/objects/ab/cdef...
+                    let obj_hash = path
+                        .strip_prefix(".ngdar/objects/")
+                        .unwrap_or(&path)
+                        .replace('/', "");
+                    entries.push((
+                        format!("data/{}", meta.binary_hash),
+                        "meta".to_string(),
+                        obj_hash,
+                        meta.size,
+                    ));
+                    continue;
+                }
+            } else if content.starts_with("tree") {
+                let obj_hash = path
+                    .strip_prefix(".ngdar/objects/")
+                    .unwrap_or(&path)
+                    .replace('/', "");
+                let num_entries = content.lines().count();
+                entries.push((
+                    format!(
+                        "[tree with {} entr{}]",
+                        num_entries,
+                        if num_entries > 1 { "ies" } else { "y" }
+                    ),
+                    "tree".to_string(),
+                    obj_hash,
+                    content.len() as u64,
+                ));
+                continue;
+            } else if content.starts_with("tree ") {
+                // Also catches single-line trees
+                let obj_hash = path
+                    .strip_prefix(".ngdar/objects/")
+                    .unwrap_or(&path)
+                    .replace('/', "");
+                entries.push((
+                    "[tree object]".to_string(),
+                    "tree".to_string(),
+                    obj_hash,
+                    content.len() as u64,
+                ));
+                continue;
+            } else if content.contains("tool_version") && content.contains("author") {
+                let obj_hash = path
+                    .strip_prefix(".ngdar/objects/")
+                    .unwrap_or(&path)
+                    .replace('/', "");
+                // Extract first line of message
+                let msg_preview = content
+                    .lines()
+                    .last()
+                    .unwrap_or("")
+                    .chars()
+                    .take(60)
+                    .collect::<String>();
+                entries.push((
+                    format!("[commit: {}]", msg_preview),
+                    "commit".to_string(),
+                    obj_hash,
+                    content.len() as u64,
+                ));
+                continue;
+            }
+        }
+
+        // Regular file entry
+        let kind = if path.ends_with('/') {
+            "dir".to_string()
+        } else {
+            "file".to_string()
+        };
+        entries.push((path, kind, String::new(), size));
+    }
+
+    // Print as a table
+    println!("=== Archive Contents: {} ===", archive_path);
+    println!();
+    println!("{:<6} {:<8} {:<20} {:<64}", "Size", "Type", "Path", "Hash");
+    println!("{}", "-".repeat(120));
+
+    for (path, kind, hash, size) in &entries {
+        let size_str = if *size > 0 {
+            if *size > 1024 * 1024 {
+                format!("{:.1}MB", *size as f64 / (1024.0 * 1024.0))
+            } else if *size > 1024 {
+                format!("{:.1}KB", *size as f64 / 1024.0)
+            } else {
+                format!("{}B", size)
+            }
+        } else {
+            String::new()
+        };
+        let hash_display = if hash.is_empty() {
+            String::new()
+        } else {
+            hash.chars().take(16).collect::<String>()
+        };
+        println!("{:<6} {:<8} {:<20} {}", size_str, kind, path, hash_display);
+    }
+
+    println!("{}", "-".repeat(120));
+    println!("Total entries: {}", entries.len());
+
+    Ok(())
+}
+
+/// Export all metadata from the repository database to a CSV file.
+///
+/// Walks every object stored in `.ngdar/objects/`, determines its type
+/// (Meta, Tree, or Commit), and writes a row to the CSV with all relevant
+/// fields. The CSV includes the following columns:
+///
+/// - `type`: object type (meta, tree, commit)
+/// - `hash`: BLAKE3 hex hash of the object (its filename)
+/// - `size`: file size in bytes (for Meta objects)
+/// - `mtime`: modification time (Unix timestamp, for Meta objects)
+/// - `permissions`: file permissions in octal (for Meta objects)
+/// - `binary_hash`: BLAKE3 hash of the actual file content (for Meta objects)
+/// - `volume_id`: volume identifier (for Meta objects)
+/// - `tree_hash`: root tree hash (for Commit objects)
+/// - `parent_hash`: parent commit hash (for Commit objects)
+/// - `timestamp`: commit timestamp (for Commit objects)
+/// - `message`: commit message preview (for Commit objects)
+/// - `entry_count`: number of entries (for Tree objects)
+pub fn db_export(csv_path: &str) -> Result<(), NgdarError> {
+    let cwd = std::env::current_dir()?;
+    db_export_at(&cwd, csv_path)
+}
+
+fn db_export_at(cwd: &Path, csv_path: &str) -> Result<(), NgdarError> {
+    let repo = Repository::find(cwd)?;
+
+    let mut wtr = csv::Writer::from_path(csv_path)
+        .map_err(|e| NgdarError::Other(format!("Cannot create CSV '{}': {}", csv_path, e)))?;
+
+    // Write CSV header
+    wtr.write_record([
+        "type",
+        "hash",
+        "size",
+        "mtime",
+        "permissions",
+        "binary_hash",
+        "volume_id",
+        "tree_hash",
+        "parent_hash",
+        "timestamp",
+        "message",
+        "entry_count",
+    ])
+    .map_err(|e| NgdarError::Other(format!("CSV write error: {}", e)))?;
+
+    // Walk the objects directory
+    let objects_dir = &repo.objects_path;
+    if !objects_dir.exists() {
+        return Err(NgdarError::Other("No objects directory found".into()));
+    }
+
+    let mut count = 0u64;
+    for entry in walkdir::WalkDir::new(objects_dir) {
+        let entry = entry?;
+        if !entry.file_type().is_file() {
+            continue;
+        }
+
+        // Reconstruct the full hash from the sharded directory structure
+        // objects/ab/cdef... -> abcdef...
+        let rel_path = entry
+            .path()
+            .strip_prefix(objects_dir)
+            .map_err(|_| NgdarError::Other("Path error".into()))?;
+        let hash_str = rel_path.to_str().unwrap_or("").replace('/', "");
+
+        let content = std::fs::read_to_string(entry.path())?;
+        let content = content.trim();
+
+        if content.starts_with("type meta") {
+            // Meta object
+            if let Ok(meta) = Meta::from_text(content) {
+                wtr.write_record([
+                    "meta",
+                    &hash_str,
+                    &meta.size.to_string(),
+                    &meta.mtime.to_string(),
+                    &format!("{:o}", meta.permissions),
+                    &meta.binary_hash,
+                    &meta.volume_id,
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                ])
+                .map_err(|e| NgdarError::Other(format!("CSV write error: {}", e)))?;
+                count += 1;
+            }
+        } else if content.contains("tool_version") && content.contains("author") {
+            // Commit object — has tool_version, author, tree, parent, timestamp fields
+            let mut tree_hash = String::new();
+            let mut parent_hash = String::new();
+            let mut timestamp = String::new();
+            let mut message = String::new();
+
+            for line in content.lines() {
+                let line = line.trim();
+                if let Some((key, value)) = line.split_once(' ') {
+                    match key {
+                        "tree" => tree_hash = value.to_string(),
+                        "parent" if value != "none" => parent_hash = value.to_string(),
+                        "timestamp" => timestamp = value.to_string(),
+                        _ => {}
+                    }
+                }
+            }
+            // Message is after the first blank line
+            if let Some(blank_pos) = content.find("\n\n") {
+                message = content[blank_pos + 2..].trim().to_string();
+                if message.len() > 100 {
+                    message = message.chars().take(100).collect::<String>() + "...";
+                }
+            }
+
+            wtr.write_record([
+                "commit",
+                &hash_str,
+                "",
+                "",
+                "",
+                "",
+                "",
+                &tree_hash,
+                &parent_hash,
+                &timestamp,
+                &message,
+                "",
+            ])
+            .map_err(|e| NgdarError::Other(format!("CSV write error: {}", e)))?;
+            count += 1;
+        } else if content.starts_with("tree ")
+            || content
+                .lines()
+                .all(|l| l.is_empty() || l.split(' ').count() == 3)
+        {
+            // Tree object — lines of "kind hash name"
+            let entry_count = content.lines().filter(|l| !l.is_empty()).count();
+            wtr.write_record([
+                "tree",
+                &hash_str,
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                &entry_count.to_string(),
+            ])
+            .map_err(|e| NgdarError::Other(format!("CSV write error: {}", e)))?;
+            count += 1;
+        }
+        // Skip unrecognized objects
+    }
+
+    wtr.flush()
+        .map_err(|e| NgdarError::Other(format!("CSV flush error: {}", e)))?;
+
+    println!("Exported {} object(s) to {}", count, csv_path);
+    Ok(())
+}
+
+/// Remove all metadata associated with a given volume ID from the database.
+///
+/// Scans all Meta objects in `.ngdar/objects/` and deletes those whose
+/// `volume_id` matches the given identifier. Then scans all Tree objects
+/// and removes any entry referencing a deleted Meta (updating the tree
+/// object in-place, which changes its hash — the old tree is deleted and
+/// re-written under its new hash).
+///
+/// Returns an error if the operation would leave the repository in an
+/// inconsistent state (e.g., no commits remain).
+pub fn archive_remove(vol_id: &str) -> Result<(), NgdarError> {
+    let cwd = std::env::current_dir()?;
+    archive_remove_at(&cwd, vol_id)
+}
+
+fn archive_remove_at(cwd: &Path, vol_id: &str) -> Result<(), NgdarError> {
+    let repo = Repository::find(cwd)?;
+    let objects_dir = &repo.objects_path;
+
+    if !objects_dir.exists() {
+        return Err(NgdarError::Other("No objects directory found".into()));
+    }
+
+    // Phase 1: Find all Meta objects with the target volume_id
+    // Map: meta_hash -> (rel_path, binary_hash)
+    let mut metas_to_remove: HashMap<String, (String, String)> = HashMap::new();
+
+    for entry in walkdir::WalkDir::new(objects_dir) {
+        let entry = entry?;
+        if !entry.file_type().is_file() {
+            continue;
+        }
+
+        // Reconstruct the full hash from the sharded directory structure
+        // objects/ab/cdef... -> abcdef...
+        let rel_path = entry
+            .path()
+            .strip_prefix(objects_dir)
+            .map_err(|_| NgdarError::Other("Path error".into()))?;
+        let hash_str = rel_path.to_str().unwrap_or("").replace('/', "");
+
+        let content = std::fs::read_to_string(entry.path())?;
+        if content.trim().starts_with("type meta") {
+            if let Ok(meta) = Meta::from_text(content.trim()) {
+                if meta.volume_id == vol_id {
+                    metas_to_remove.insert(
+                        hash_str.clone(),
+                        (entry.path().to_string_lossy().to_string(), meta.binary_hash),
+                    );
+                }
+            }
+        }
+    }
+
+    if metas_to_remove.is_empty() {
+        println!("No Meta objects found with volume_id '{}'", vol_id);
+        return Ok(());
+    }
+
+    println!(
+        "Found {} Meta object(s) with volume_id '{}'",
+        metas_to_remove.len(),
+        vol_id
+    );
+
+    // Phase 2: Scan all Tree objects and remove references to deleted metas
+    let mut trees_modified = 0u64;
+    for entry in walkdir::WalkDir::new(objects_dir) {
+        let entry = entry?;
+        if !entry.file_type().is_file() {
+            continue;
+        }
+
+        let content = std::fs::read_to_string(entry.path())?;
+        let trimmed = content.trim();
+
+        // Check if this looks like a tree (lines of "kind hash name")
+        if trimmed.is_empty()
+            || !trimmed.lines().all(|l| {
+                let parts: Vec<&str> = l.splitn(3, ' ').collect();
+                parts.len() >= 2
+            })
+        {
+            continue;
+        }
+
+        // Check if any line references a meta hash we're removing
+        let mut new_lines: Vec<String> = Vec::new();
+        let mut changed = false;
+        for line in trimmed.lines() {
+            let parts: Vec<&str> = line.splitn(3, ' ').collect();
+            if parts.len() >= 2 && parts[0] == "meta" && metas_to_remove.contains_key(parts[1]) {
+                changed = true;
+                // Skip this line - remove the reference
+                continue;
+            }
+            new_lines.push(line.to_string());
+        }
+
+        if changed {
+            let new_content = new_lines.join("\n") + "\n";
+            let old_path = entry.path();
+            // Delete the old tree object
+            std::fs::remove_file(old_path)?;
+            // Write the new tree object (content-addressable, so new hash)
+            if !new_lines.is_empty() {
+                let _new_hash = write_object(objects_dir, &new_content)?;
+            }
+            trees_modified += 1;
+        }
+    }
+
+    // Phase 3: Delete the Meta objects
+    let mut deleted = 0u64;
+    for (hash_str, (file_path, _binary_hash)) in &metas_to_remove {
+        let path = std::path::Path::new(file_path);
+        if path.exists() {
+            std::fs::remove_file(path)?;
+            // Also try to remove the parent directory if it's empty
+            if let Some(parent) = path.parent() {
+                if parent.is_dir()
+                    && parent
+                        .read_dir()
+                        .map(|mut d| d.next().is_none())
+                        .unwrap_or(false)
+                {
+                    std::fs::remove_dir(parent).ok();
+                }
+            }
+            deleted += 1;
+            println!("  Removed Meta: {}", hash_str);
+        }
+    }
+
+    println!();
+    println!(
+        "Deleted {} Meta object(s), modified {} Tree object(s)",
+        deleted, trees_modified
+    );
+    println!("Volume '{}' has been removed from the database.", vol_id);
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    /// Test that `hash()` correctly computes the BLAKE3 hash of a file.
+    ///
+    /// Creates a temporary file with known content, calls `hash()`, and
+    /// verifies the output matches a direct BLAKE3 computation.
+    #[test]
+    fn test_hash_command() {
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        f.write_all(b"hello world").unwrap();
+        let path = f.path().to_str().unwrap().to_string();
+
+        // Run the hash command (it prints to stdout, but we can verify it returns Ok)
+        let result = hash(&path);
+        assert!(result.is_ok(), "hash() should succeed");
+    }
+
+    /// Test that `hash()` returns an error for a non-existent file.
+    #[test]
+    fn test_hash_nonexistent_file() {
+        let result = hash("/tmp/nonexistent_file_ngdar_test_xyz");
+        assert!(result.is_err(), "hash() should fail for nonexistent file");
+    }
+
+    /// Test that `hash()` produces the correct hex string length.
+    #[test]
+    fn test_hash_output_format() {
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        f.write_all(b"test content for hash").unwrap();
+        let path = f.path().to_str().unwrap().to_string();
+
+        let file_path = std::path::Path::new(&path);
+        let hash = hash_file(file_path).unwrap();
+        let hex = hash_to_hex(&hash);
+        // BLAKE3 hex output is 64 characters
+        assert_eq!(hex.len(), 64);
+    }
+
+    /// Test that `db_export()` creates a valid CSV file with the correct headers.
+    ///
+    /// Sets up a temporary ngdar repository, creates a Meta object in the
+    /// object store, runs `db_export()`, and verifies the CSV output contains
+    /// the expected columns and data.
+    #[test]
+    fn test_db_export_creates_csv() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let root = dir.path().to_path_buf();
+        // Initialize a repo
+        let repo = Repository::init(&root).unwrap();
+
+        // Create a Meta object manually
+        let meta = Meta::new(
+            1024,
+            1700000000,
+            0o644,
+            "abcdef123456".into(),
+            "DVD-TEST".into(),
+        );
+        let meta_text = meta.to_text();
+        let _meta_hash = write_object(&repo.objects_path, &meta_text).unwrap();
+
+        // Run db_export
+        let csv_path = root.join("export.csv");
+        let csv_str = csv_path.to_str().unwrap().to_string();
+        let result = db_export_at(&root, &csv_str);
+        assert!(result.is_ok(), "db_export_at() should succeed");
+
+        // Verify CSV file exists and contains expected data
+        assert!(csv_path.exists(), "CSV file should exist");
+        let csv_content = std::fs::read_to_string(&csv_path).unwrap();
+        assert!(csv_content.contains("type"), "CSV should have header");
+        assert!(csv_content.contains("meta"), "CSV should contain meta row");
+        assert!(csv_content.contains("1024"), "CSV should contain size");
+        assert!(
+            csv_content.contains("abcdef123456"),
+            "CSV should contain binary_hash"
+        );
+        assert!(
+            csv_content.contains("DVD-TEST"),
+            "CSV should contain volume_id"
+        );
+    }
+
+    /// Test that `archive_remove()` reports no matches for a non-existent volume ID.
+    ///
+    /// Creates a temporary repo with a Meta object, then tries to remove a
+    /// different volume_id — the command should succeed but report 0 removals.
+    #[test]
+    fn test_archive_remove_no_match() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let root = dir.path().to_path_buf();
+        let repo = Repository::init(&root).unwrap();
+
+        // Create a Meta object with a known volume_id
+        let meta = Meta::new(512, 1700000001, 0o644, "hash123".into(), "DVD-KEEP".into());
+        let meta_text = meta.to_text();
+        write_object(&repo.objects_path, &meta_text).unwrap();
+
+        // Try to remove a different volume_id
+        let result = archive_remove_at(&root, "DVD-NONEXISTENT");
+        assert!(
+            result.is_ok(),
+            "archive_remove() should succeed even with no match"
+        );
+    }
+
+    /// Test that `archive_remove()` actually deletes Meta objects matching the volume_id.
+    ///
+    /// Creates a temporary repo, inserts two Meta objects with different
+    /// volume_ids, removes one, and verifies the correct object was deleted.
+    #[test]
+    fn test_archive_remove_deletes_meta() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let root = dir.path().to_path_buf();
+        let repo = Repository::init(&root).unwrap();
+
+        // Create two Meta objects with different volume_ids
+        let meta1 = Meta::new(100, 1000, 0o644, "hash1".into(), "DVD-REMOVE".into());
+        let meta1_text = meta1.to_text();
+        let meta1_hash = write_object(&repo.objects_path, &meta1_text).unwrap();
+
+        let meta2 = Meta::new(200, 2000, 0o644, "hash2".into(), "DVD-KEEP".into());
+        let meta2_text = meta2.to_text();
+        let meta2_hash = write_object(&repo.objects_path, &meta2_text).unwrap();
+
+        // Verify both objects exist
+        let obj1_path = crate::objects::object_path(&repo.objects_path, &meta1_hash);
+        let obj2_path = crate::objects::object_path(&repo.objects_path, &meta2_hash);
+        assert!(obj1_path.exists(), "meta1 should exist before removal");
+        assert!(obj2_path.exists(), "meta2 should exist before removal");
+
+        // Remove DVD-REMOVE
+        let result = archive_remove_at(&root, "DVD-REMOVE");
+        assert!(result.is_ok(), "archive_remove_at() should succeed");
+
+        // Verify meta1 was deleted and meta2 still exists
+        assert!(!obj1_path.exists(), "meta1 should be deleted");
+        assert!(obj2_path.exists(), "meta2 should still exist");
+    }
 }

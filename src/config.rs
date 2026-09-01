@@ -3,19 +3,30 @@ use std::path::{Path, PathBuf};
 
 /// The `.ngdar` directory structure within a repository.
 pub const NGDAR_DIR: &str = ".ngdar";
+/// The objects subdirectory name (`.ngdar/objects`).
 pub const OBJECTS_DIR: &str = "objects";
+/// The HEAD file name (`.ngdar/HEAD`), containing the latest commit hash.
 pub const HEAD_FILE: &str = "HEAD";
+/// The index file name (`.ngdar/index`), containing the staging area.
 pub const INDEX_FILE: &str = "index";
+/// The repository ID file name (`.ngdar/repository_id`), containing a UUID v4.
 pub const REPO_ID_FILE: &str = "repository_id";
+/// The ignore file name (`.ngdarignore`) at the repository root.
 pub const NGDAR_IGNORE_FILE: &str = ".ngdarignore";
 
 /// Repository configuration, read from the `.ngdar/` directory.
 pub struct Repository {
+    /// Absolute path to the repository root.
     pub path: PathBuf,
+    /// Absolute path to `.ngdar/` directory.
     pub ngdar_path: PathBuf,
+    /// Absolute path to `.ngdar/objects/` directory.
     pub objects_path: PathBuf,
+    /// Absolute path to `.ngdar/HEAD` file.
     pub head_path: PathBuf,
+    /// Absolute path to `.ngdar/index` file.
     pub index_path: PathBuf,
+    /// Unique repository identifier (UUID v4).
     pub repo_id: String,
 }
 

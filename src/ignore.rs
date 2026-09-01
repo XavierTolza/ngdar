@@ -1,13 +1,25 @@
+//! `.ngdarignore` file pattern matching and untracked file discovery.
+//!
+//! Provides [`IgnoreRules`] for filtering out ignored files and
+//! [`list_untracked`] for finding files not yet tracked in the repository.
+
 use crate::error::NgdarError;
 use std::path::Path;
 
 /// A pattern matcher for `.ngdarignore` files.
+///
+/// Supports glob patterns with `*`, `**`, and `?` wildcards.
+/// Patterns without a `/` match anywhere in the directory tree;
+/// patterns ending with `/` match directories.
 pub struct IgnoreRules {
+    /// The list of glob patterns loaded from `.ngdarignore`.
     patterns: Vec<String>,
 }
 
 impl IgnoreRules {
-    /// Load rules from a file if it exists.
+    /// Load rules from the `.ngdarignore` file if it exists.
+    ///
+    /// Blank lines and lines starting with `#` are ignored.
     pub fn load(root: &Path) -> Result<Self, NgdarError> {
         let ignore_file = root.join(crate::config::NGDAR_IGNORE_FILE);
         let mut patterns = Vec::new();
@@ -26,7 +38,9 @@ impl IgnoreRules {
     }
 
     /// Check if a relative path should be ignored.
-    /// Supports glob patterns via the `glob` crate pattern syntax.
+    ///
+    /// The `.ngdar/` directory and `.ngdarignore` file are always ignored.
+    /// Supports glob patterns via the `glob_match()` function.
     pub fn is_ignored(&self, rel_path: &str) -> bool {
         if rel_path.starts_with(".ngdar") || rel_path == NGDAR_IGNORE_FILE {
             return true;
@@ -47,6 +61,9 @@ impl IgnoreRules {
 }
 
 /// Simple glob matching. Supports `*`, `**`, and `?`.
+///
+/// `*` matches any characters except `/`, `**` matches any characters
+/// including `/`, and `?` matches a single character.
 fn glob_match(pattern: &str, path: &str) -> bool {
     // Escape literal dots
     let pattern = pattern.replace('.', "\\.");
@@ -68,6 +85,9 @@ fn glob_match(pattern: &str, path: &str) -> bool {
 }
 
 /// Collect untracked files under a root directory.
+///
+/// Walks the directory tree, skipping `.ngdar/` contents and ignored files.
+/// Returns a sorted list of relative paths not present in `tracked`.
 pub fn list_untracked(root: &Path, tracked: &[String]) -> Result<Vec<String>, NgdarError> {
     let ignore_rules = IgnoreRules::load(root)?;
     let mut untracked = Vec::new();
@@ -102,6 +122,7 @@ pub fn list_untracked(root: &Path, tracked: &[String]) -> Result<Vec<String>, Ng
     Ok(untracked)
 }
 
+/// The `.ngdarignore` file name.
 pub const NGDAR_IGNORE_FILE: &str = ".ngdarignore";
 
 #[cfg(test)]
