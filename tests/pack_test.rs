@@ -61,17 +61,14 @@ fn pack_contains_metadata_and_data() {
     assert!(extract_dir.join(".ngdar/repository_id").exists());
     assert!(extract_dir.join(".ngdar/objects").is_dir());
     assert!(
-        extract_dir.join("data/README.txt").exists(),
-        "data/README.txt missing"
+        extract_dir.join("README.txt").exists(),
+        "README.txt missing"
     );
     assert!(
-        extract_dir.join("data/docs/note.txt").exists(),
-        "data/docs/note.txt missing"
+        extract_dir.join("docs/note.txt").exists(),
+        "docs/note.txt missing"
     );
-    assert!(
-        extract_dir.join("data/large.bin").exists(),
-        "data/large.bin missing"
-    );
+    assert!(extract_dir.join("large.bin").exists(), "large.bin missing");
 }
 
 #[test]
@@ -80,11 +77,11 @@ fn pack_data_files_have_correct_contents() {
     let tar_path = pack_all(&root, "DVD-001");
     let extract_dir = extract_tar(&root, &tar_path, "extract");
 
-    let readme = std::fs::read_to_string(extract_dir.join("data/README.txt")).unwrap();
+    let readme = std::fs::read_to_string(extract_dir.join("README.txt")).unwrap();
     assert_eq!(readme, "ngdar test project");
-    let note = std::fs::read_to_string(extract_dir.join("data/docs/note.txt")).unwrap();
+    let note = std::fs::read_to_string(extract_dir.join("docs/note.txt")).unwrap();
     assert_eq!(note, "incremental backup test");
-    let bin = std::fs::read(extract_dir.join("data/large.bin")).unwrap();
+    let bin = std::fs::read(extract_dir.join("large.bin")).unwrap();
     assert_eq!(bin.len(), 1024);
     assert!(bin.iter().all(|&b| b == 0xAB));
 }
