@@ -55,14 +55,28 @@ pub enum Commands {
         path: String,
     },
 
-    /// Display the contents of a previously created archive as a table
+    /// List commits or show files in a commit
     ///
-    /// Lists all files in the archive alongside their BLAKE3 hash.
-    /// For archives created by ngdar, metadata from the .ngdar/objects
-    /// entries is parsed and shown.
-    ArchiveContent {
-        /// Path to the tar archive
-        archive: String,
+    /// Without arguments, walks the commit chain and shows all commits.
+    /// With a commit hash, lists all files in that commit with their
+    /// path, BLAKE3 hash, and size.
+    Log {
+        /// Optional commit hash to inspect
+        commit_hash: Option<String>,
+    },
+
+    /// Recreate a TAR archive from stored metadata
+    ///
+    /// Reads files from disk at their original paths, verifies their
+    /// BLAKE3 hash, and packs them into a tar archive. Useful for
+    /// restoring archives that were lost.
+    Export {
+        /// Commit hash to export
+        commit_hash: String,
+
+        /// Output tar file path
+        #[arg(long = "out")]
+        out: String,
     },
 
     /// Export all metadata from the repository database to a CSV file
@@ -73,16 +87,5 @@ pub enum Commands {
     DbExport {
         /// Output CSV file path
         csv: String,
-    },
-
-    /// Remove all metadata associated with a given volume ID from the database
-    ///
-    /// Deletes all Meta objects whose volume_id matches the given identifier.
-    /// Also updates affected Tree objects by removing entries that reference
-    /// the deleted Meta objects.
-    ArchiveRemove {
-        /// Volume identifier to remove (e.g., "DVD-001")
-        #[arg(long = "vol-id")]
-        vol_id: String,
     },
 }

@@ -4,8 +4,6 @@ use crate::error::NgdarError;
 use crate::hash::{hash_file, hash_to_hex};
 use crate::ignore::{self, IgnoreRules};
 use crate::objects::{self, build_tree_from_index, write_object, Commit, Meta};
-use std::collections::HashMap;
-use std::io::Read;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -359,7 +357,7 @@ pub fn pack(vol_id: &str, out: &str, message: &str) -> Result<(), NgdarError> {
         };
 
         // Create Meta object
-        let meta = Meta::new(size, mtime, perms, binary_hash, vol_id.to_string());
+        let meta = Meta::new(size, mtime, perms, binary_hash, vol_id.to_string(), rel_str.clone());
         let meta_text = meta.to_text();
         let meta_hash = write_object(&repo.objects_path, &meta_text)?;
 
@@ -529,158 +527,6 @@ pub fn hash(path: &str) -> Result<(), NgdarError> {
     Ok(())
 }
 
-/// Display the contents of a previously created ngdar archive.
-///
-/// Opens the `.tar` archive and lists all files it contains. For ngdar
-/// archives, the `.ngdar/objects/` metadata entries are parsed and displayed
-/// alongside the file listing, showing the BLAKE3 hash of each object.
-///
-/// The output is a formatted table with columns:
-/// - **Path**: file path within the archive
-/// - **Type**: entry type (file, meta, tree, commit, directory)
-/// - **Hash**: BLAKE3 hash (for object entries)
-/// - **Size**: file size in bytes
-///
-/// Entries parsed from `.ngdar/objects/` use the value of `binary_hash`
-/// from the source Meta object as the displayed path.
-pub fn archive_content(archive_path: &str) -> Result<(), NgdarError> {
-    let file = std::fs::File::open(archive_path)
-        .map_err(|e| NgdarError::Other(format!("Cannot open archive '{}': {}", archive_path, e)))?;
-    let mut archive = tar::Archive::new(&file);
-
-    // Collect entries: (path, kind, hash, size)
-    // kind is: "file" for data files, "meta"/"tree"/"commit" for parsed objects
-    let mut entries: Vec<(String, String, String, u64)> = Vec::new();
-
-    for entry_result in archive
-        .entries()
-        .map_err(|e| NgdarError::Other(format!("Cannot read archive '{}': {}", archive_path, e)))?
-    {
-        let mut entry =
-            entry_result.map_err(|e| NgdarError::Other(format!("Archive entry error: {}", e)))?;
-
-        let path = entry
-            .path()
-            .map_err(|e| NgdarError::Other(format!("Archive path error: {}", e)))?
-            .to_string_lossy()
-            .to_string();
-        let size = entry.header().size().unwrap_or(0);
-
-        // Try to parse the content if it's an object file
-        if path.starts_with(".ngdar/objects/") {
-            let mut content = String::new();
-            entry.read_to_string(&mut content).ok();
-            let content = content.trim().to_string();
-
-            if content.starts_with("type meta") {
-                if let Ok(meta) = Meta::from_text(&content) {
-                    // Extract hash from the file path: .ngdar/objects/ab/cdef...
-                    let obj_hash = path
-                        .strip_prefix(".ngdar/objects/")
-                        .unwrap_or(&path)
-                        .replace('/', "");
-                    entries.push((
-                        meta.binary_hash.clone(),
-                        "meta".to_string(),
-                        obj_hash,
-                        meta.size,
-                    ));
-                    continue;
-                }
-            } else if content.starts_with("tree") {
-                let obj_hash = path
-                    .strip_prefix(".ngdar/objects/")
-                    .unwrap_or(&path)
-                    .replace('/', "");
-                let num_entries = content.lines().count();
-                entries.push((
-                    format!(
-                        "[tree with {} entr{}]",
-                        num_entries,
-                        if num_entries > 1 { "ies" } else { "y" }
-                    ),
-                    "tree".to_string(),
-                    obj_hash,
-                    content.len() as u64,
-                ));
-                continue;
-            } else if content.starts_with("tree ") {
-                // Also catches single-line trees
-                let obj_hash = path
-                    .strip_prefix(".ngdar/objects/")
-                    .unwrap_or(&path)
-                    .replace('/', "");
-                entries.push((
-                    "[tree object]".to_string(),
-                    "tree".to_string(),
-                    obj_hash,
-                    content.len() as u64,
-                ));
-                continue;
-            } else if content.contains("tool_version") && content.contains("author") {
-                let obj_hash = path
-                    .strip_prefix(".ngdar/objects/")
-                    .unwrap_or(&path)
-                    .replace('/', "");
-                // Extract first line of message
-                let msg_preview = content
-                    .lines()
-                    .last()
-                    .unwrap_or("")
-                    .chars()
-                    .take(60)
-                    .collect::<String>();
-                entries.push((
-                    format!("[commit: {}]", msg_preview),
-                    "commit".to_string(),
-                    obj_hash,
-                    content.len() as u64,
-                ));
-                continue;
-            }
-        }
-
-        // Regular file entry
-        let kind = if path.ends_with('/') {
-            "dir".to_string()
-        } else {
-            "file".to_string()
-        };
-        entries.push((path, kind, String::new(), size));
-    }
-
-    // Print as a table
-    println!("=== Archive Contents: {} ===", archive_path);
-    println!();
-    println!("{:<6} {:<8} {:<20} {:<64}", "Size", "Type", "Path", "Hash");
-    println!("{}", "-".repeat(120));
-
-    for (path, kind, hash, size) in &entries {
-        let size_str = if *size > 0 {
-            if *size > 1024 * 1024 {
-                format!("{:.1}MB", *size as f64 / (1024.0 * 1024.0))
-            } else if *size > 1024 {
-                format!("{:.1}KB", *size as f64 / 1024.0)
-            } else {
-                format!("{}B", size)
-            }
-        } else {
-            String::new()
-        };
-        let hash_display = if hash.is_empty() {
-            String::new()
-        } else {
-            hash.chars().take(16).collect::<String>()
-        };
-        println!("{:<6} {:<8} {:<20} {}", size_str, kind, path, hash_display);
-    }
-
-    println!("{}", "-".repeat(120));
-    println!("Total entries: {}", entries.len());
-
-    Ok(())
-}
-
 /// Export all metadata from the repository database to a CSV file.
 ///
 /// Walks every object stored in `.ngdar/objects/`, determines its type
@@ -719,6 +565,7 @@ fn db_export_at(cwd: &Path, csv_path: &str) -> Result<(), NgdarError> {
         "permissions",
         "binary_hash",
         "volume_id",
+        "path",
         "tree_hash",
         "parent_hash",
         "timestamp",
@@ -762,6 +609,7 @@ fn db_export_at(cwd: &Path, csv_path: &str) -> Result<(), NgdarError> {
                     &format!("{:o}", meta.permissions),
                     &meta.binary_hash,
                     &meta.volume_id,
+                    &meta.path,
                     "",
                     "",
                     "",
@@ -805,6 +653,7 @@ fn db_export_at(cwd: &Path, csv_path: &str) -> Result<(), NgdarError> {
                 "",
                 "",
                 "",
+                "",
                 &tree_hash,
                 &parent_hash,
                 &timestamp,
@@ -832,6 +681,7 @@ fn db_export_at(cwd: &Path, csv_path: &str) -> Result<(), NgdarError> {
                 "",
                 "",
                 "",
+                "",
                 &entry_count.to_string(),
             ])
             .map_err(|e| NgdarError::Other(format!("CSV write error: {}", e)))?;
@@ -847,149 +697,206 @@ fn db_export_at(cwd: &Path, csv_path: &str) -> Result<(), NgdarError> {
     Ok(())
 }
 
-/// Remove all metadata associated with a given volume ID from the database.
+/// List all commits (like git log) or list files in a specific commit.
 ///
-/// Scans all Meta objects in `.ngdar/objects/` and deletes those whose
-/// `volume_id` matches the given identifier. Then scans all Tree objects
-/// and removes any entry referencing a deleted Meta (updating the tree
-/// object in-place, which changes its hash — the old tree is deleted and
-/// re-written under its new hash).
+/// If no commit hash is given, walks the commit chain backwards from HEAD
+/// and prints each commit's hash, timestamp, and message.
 ///
-/// Returns an error if the operation would leave the repository in an
-/// inconsistent state (e.g., no commits remain).
-pub fn archive_remove(vol_id: &str) -> Result<(), NgdarError> {
+/// If a commit hash is given, walks the commit's tree and lists all Meta
+/// objects with their original path, BLAKE3 hash, and file size.
+pub fn log(commit_hash: Option<&str>) -> Result<(), NgdarError> {
     let cwd = std::env::current_dir()?;
-    archive_remove_at(&cwd, vol_id)
+    let repo = Repository::find(&cwd)?;
+
+    match commit_hash {
+        None => log_commits(&repo),
+        Some(hash) => log_commit_files(&repo, hash),
+    }
 }
 
-fn archive_remove_at(cwd: &Path, vol_id: &str) -> Result<(), NgdarError> {
+/// List all commits (test helper with explicit root path).
+#[cfg(test)]
+fn log_at(cwd: &Path, commit_hash: Option<&str>) -> Result<(), NgdarError> {
     let repo = Repository::find(cwd)?;
-    let objects_dir = &repo.objects_path;
-
-    if !objects_dir.exists() {
-        return Err(NgdarError::Other("No objects directory found".into()));
+    match commit_hash {
+        None => log_commits(&repo),
+        Some(hash) => log_commit_files(&repo, hash),
     }
+}
 
-    // Phase 1: Find all Meta objects with the target volume_id
-    // Map: meta_hash -> (rel_path, binary_hash)
-    let mut metas_to_remove: HashMap<String, (String, String)> = HashMap::new();
 
-    for entry in walkdir::WalkDir::new(objects_dir) {
-        let entry = entry?;
-        if !entry.file_type().is_file() {
-            continue;
-        }
+/// Walk the commit chain backwards and print each commit.
+fn log_commits(repo: &Repository) -> Result<(), NgdarError> {
+    let head = repo.read_head()?;
+    let mut current = head;
 
-        // Reconstruct the full hash from the sharded directory structure
-        // objects/ab/cdef... -> abcdef...
-        let rel_path = entry
-            .path()
-            .strip_prefix(objects_dir)
-            .map_err(|_| NgdarError::Other("Path error".into()))?;
-        let hash_str = rel_path.to_str().unwrap_or("").replace('/', "");
-
-        let content = std::fs::read_to_string(entry.path())?;
-        if content.trim().starts_with("type meta") {
-            if let Ok(meta) = Meta::from_text(content.trim()) {
-                if meta.volume_id == vol_id {
-                    metas_to_remove.insert(
-                        hash_str.clone(),
-                        (entry.path().to_string_lossy().to_string(), meta.binary_hash),
-                    );
-                }
-            }
-        }
-    }
-
-    if metas_to_remove.is_empty() {
-        println!("No Meta objects found with volume_id '{}'", vol_id);
+    if current.is_none() {
+        println!("(no commits yet)");
         return Ok(());
     }
 
-    println!(
-        "Found {} Meta object(s) with volume_id '{}'",
-        metas_to_remove.len(),
-        vol_id
-    );
+    while let Some(hash) = current {
+        let commit_text = objects::read_object(&repo.objects_path, &hash)?;
+        let commit = Commit::from_text(&commit_text)?;
 
-    // Phase 2: Scan all Tree objects and remove references to deleted metas
-    let mut trees_modified = 0u64;
-    for entry in walkdir::WalkDir::new(objects_dir) {
-        let entry = entry?;
-        if !entry.file_type().is_file() {
-            continue;
-        }
+        // Format timestamp
+        let ts = chrono::DateTime::from_timestamp(commit.timestamp, 0)
+            .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+            .unwrap_or_else(|| commit.timestamp.to_string());
 
-        let content = std::fs::read_to_string(entry.path())?;
-        let trimmed = content.trim();
+        // First line of message
+        let msg_first = commit.message.lines().next().unwrap_or(&commit.message);
 
-        // Check if this looks like a tree (lines of "kind hash name")
-        if trimmed.is_empty()
-            || !trimmed.lines().all(|l| {
-                let parts: Vec<&str> = l.splitn(3, ' ').collect();
-                parts.len() >= 2
-            })
-        {
-            continue;
-        }
+        println!("commit {}
+Author: {}
+Date:   {}
 
-        // Check if any line references a meta hash we're removing
-        let mut new_lines: Vec<String> = Vec::new();
-        let mut changed = false;
-        for line in trimmed.lines() {
-            let parts: Vec<&str> = line.splitn(3, ' ').collect();
-            if parts.len() >= 2 && parts[0] == "meta" && metas_to_remove.contains_key(parts[1]) {
-                changed = true;
-                // Skip this line - remove the reference
-                continue;
-            }
-            new_lines.push(line.to_string());
-        }
+    {}
+",
+            hash, commit.author, ts, msg_first);
 
-        if changed {
-            let new_content = new_lines.join("\n") + "\n";
-            let old_path = entry.path();
-            // Delete the old tree object
-            std::fs::remove_file(old_path)?;
-            // Write the new tree object (content-addressable, so new hash)
-            if !new_lines.is_empty() {
-                let _new_hash = write_object(objects_dir, &new_content)?;
-            }
-            trees_modified += 1;
-        }
+        current = commit.parent_hash;
     }
-
-    // Phase 3: Delete the Meta objects
-    let mut deleted = 0u64;
-    for (hash_str, (file_path, _binary_hash)) in &metas_to_remove {
-        let path = std::path::Path::new(file_path);
-        if path.exists() {
-            std::fs::remove_file(path)?;
-            // Also try to remove the parent directory if it's empty
-            if let Some(parent) = path.parent() {
-                if parent.is_dir()
-                    && parent
-                        .read_dir()
-                        .map(|mut d| d.next().is_none())
-                        .unwrap_or(false)
-                {
-                    std::fs::remove_dir(parent).ok();
-                }
-            }
-            deleted += 1;
-            println!("  Removed Meta: {}", hash_str);
-        }
-    }
-
-    println!();
-    println!(
-        "Deleted {} Meta object(s), modified {} Tree object(s)",
-        deleted, trees_modified
-    );
-    println!("Volume '{}' has been removed from the database.", vol_id);
-
     Ok(())
 }
+
+/// List all files in a given commit with their path, hash, and size.
+fn log_commit_files(repo: &Repository, commit_hash: &str) -> Result<(), NgdarError> {
+    let commit_text = objects::read_object(&repo.objects_path, commit_hash)?;
+    let commit = Commit::from_text(&commit_text)?;
+
+    // Walk the tree to find all Meta hashes -> paths
+    let tree_text = objects::read_object(&repo.objects_path, &commit.tree_hash)?;
+    let tree = objects::Tree::from_text(&tree_text)?;
+    let mut meta_refs: Vec<(String, String)> = Vec::new(); // (meta_hash, rel_path)
+    collect_meta_with_hashes(&repo.objects_path, &tree, &mut meta_refs, "")?;
+
+    println!("Commit: {}", commit_hash);
+    let msg_first = commit.message.lines().next().unwrap_or(&commit.message);
+    println!("Message: {}", msg_first);
+    if let Some(parent) = &commit.parent_hash {
+        println!("Parent: {}", parent);
+    }
+    println!();
+    println!("{:<8} {:<20} {:<64} {}", "Size", "Volume", "Hash", "Path");
+    println!("{}", "-".repeat(120));
+
+    for (meta_hash, _rel_path) in &meta_refs {
+        let meta_text = objects::read_object(&repo.objects_path, meta_hash)?;
+        if let Ok(meta) = Meta::from_text(&meta_text) {
+            let size_str = if meta.size > 1024 * 1024 {
+                format!("{:.1}MB", meta.size as f64 / (1024.0 * 1024.0))
+            } else if meta.size > 1024 {
+                format!("{:.1}KB", meta.size as f64 / 1024.0)
+            } else {
+                format!("{}B", meta.size)
+            };
+            let hash_short: String = meta_hash.chars().take(16).collect();
+            println!("{:<8} {:<20} {:<64} {}", size_str, meta.volume_id, hash_short, meta.path);
+        }
+    }
+
+    println!("{}", "-".repeat(120));
+    println!("Total files: {}", meta_refs.len());
+    Ok(())
+}
+
+/// Recursively collect (meta_hash, rel_path) pairs from a Tree.
+fn collect_meta_with_hashes(
+    objects_dir: &Path,
+    tree: &objects::Tree,
+    results: &mut Vec<(String, String)>,
+    prefix: &str,
+) -> Result<(), NgdarError> {
+    for entry in &tree.entries {
+        let full_path = if prefix.is_empty() {
+            entry.name.clone()
+        } else {
+            format!("{}/{}", prefix, entry.name)
+        };
+        if entry.kind == "meta" {
+            results.push((entry.hash.clone(), full_path));
+        } else if entry.kind == "tree" {
+            let sub_text = objects::read_object(objects_dir, &entry.hash)?;
+            let sub_tree = objects::Tree::from_text(&sub_text)?;
+            collect_meta_with_hashes(objects_dir, &sub_tree, results, &full_path)?;
+        }
+    }
+    Ok(())
+}
+
+/// Recreate a TAR archive from stored metadata for a given commit.
+///
+/// Reads each file from disk using the path stored in its Meta object,
+/// verifies the BLAKE3 hash matches, and packs them into a tar archive
+/// at the specified output path. If a file is missing or its hash does
+/// not match, a warning is printed but the command continues.
+pub fn export(commit_hash: &str, out_path: &str) -> Result<(), NgdarError> {
+    let cwd = std::env::current_dir()?;
+    let repo = Repository::find(&cwd)?;
+    export_with_repo(&repo, commit_hash, out_path)
+}
+
+/// Recreate a TAR archive (test helper with explicit root path).
+#[cfg(test)]
+fn export_at(cwd: &Path, commit_hash: &str, out_path: &str) -> Result<(), NgdarError> {
+    let repo = Repository::find(cwd)?;
+    // Reuse the same logic as export but with given cwd
+    let _ = repo; // we already have the repo, but the logic needs the path
+    export_with_repo(&repo, commit_hash, out_path)
+}
+
+/// Internal export implementation that takes a repo reference.
+fn export_with_repo(repo: &Repository, commit_hash: &str, out_path: &str) -> Result<(), NgdarError> {
+    let commit_text = objects::read_object(&repo.objects_path, commit_hash)?;
+    let commit = Commit::from_text(&commit_text)?;
+    let tree_text = objects::read_object(&repo.objects_path, &commit.tree_hash)?;
+    let tree = objects::Tree::from_text(&tree_text)?;
+    let mut meta_refs: Vec<(String, String)> = Vec::new();
+    collect_meta_with_hashes(&repo.objects_path, &tree, &mut meta_refs, "")?;
+    println!("Exporting {} file(s) from commit {}...", meta_refs.len(), commit_hash);
+    let file = std::fs::File::create(out_path)?;
+    let mut builder = tar::Builder::new(&file);
+    add_dir_to_tar(&mut builder, &repo.ngdar_path, ".ngdar", &repo.ngdar_path)?;
+    let mut exported = 0u64;
+    let mut warnings = 0u64;
+    for (meta_hash, _rel_path) in &meta_refs {
+        let meta_text = objects::read_object(&repo.objects_path, meta_hash)?;
+        if let Ok(meta) = Meta::from_text(&meta_text) {
+            let full_path = repo.path.join(&meta.path);
+            if !full_path.exists() {
+                eprintln!("Warning: '{}' not found on disk, skipping", meta.path);
+                warnings += 1;
+                continue;
+            }
+            let actual_hash = hash_file(&full_path)?;
+            let actual_hex = hash_to_hex(&actual_hash);
+            if actual_hex != meta.binary_hash {
+                eprintln!("Warning: '{}' has been modified (hash mismatch), skipping", meta.path);
+                warnings += 1;
+                continue;
+            }
+            let file_data = std::fs::read(&full_path)?;
+            let file_metadata = std::fs::metadata(&full_path)?;
+            let mut header = tar::Header::new_gnu();
+            header.set_size(file_data.len() as u64);
+            header.set_mode(format_permissions(&file_metadata));
+            header.set_mtime(get_mtime(&file_metadata) as u64);
+            header.set_entry_type(tar::EntryType::Regular);
+            builder
+                .append_data(&mut header, &meta.path, std::io::Cursor::new(&file_data))
+                .map_err(|e| NgdarError::Other(format!("TAR error: {}", e)))?;
+            exported += 1;
+        }
+    }
+    builder.finish()?;
+    println!("Exported {} file(s) to {}", exported, out_path);
+    if warnings > 0 {
+        eprintln!("{} file(s) were skipped due to warnings", warnings);
+    }
+    Ok(())
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -1051,6 +958,7 @@ mod tests {
             0o644,
             "abcdef123456".into(),
             "DVD-TEST".into(),
+            "test.bin".into(),
         );
         let meta_text = meta.to_text();
         let _meta_hash = write_object(&repo.objects_path, &meta_text).unwrap();
@@ -1077,60 +985,30 @@ mod tests {
         );
     }
 
-    /// Test that `archive_remove()` reports no matches for a non-existent volume ID.
-    ///
-    /// Creates a temporary repo with a Meta object, then tries to remove a
-    /// different volume_id — the command should succeed but report 0 removals.
+    /// Test that `log()` returns Ok with no commits.
     #[test]
-    fn test_archive_remove_no_match() {
+    fn test_log_no_commits() {
         let dir = tempfile::TempDir::new().unwrap();
         let root = dir.path().to_path_buf();
-        let repo = Repository::init(&root).unwrap();
-
-        // Create a Meta object with a known volume_id
-        let meta = Meta::new(512, 1700000001, 0o644, "hash123".into(), "DVD-KEEP".into());
-        let meta_text = meta.to_text();
-        write_object(&repo.objects_path, &meta_text).unwrap();
-
-        // Try to remove a different volume_id
-        let result = archive_remove_at(&root, "DVD-NONEXISTENT");
+        Repository::init(&root).unwrap();
+        let result = log_at(&root, None);
         assert!(
             result.is_ok(),
-            "archive_remove() should succeed even with no match"
+            "log() should succeed even with no commits"
         );
     }
 
-    /// Test that `archive_remove()` actually deletes Meta objects matching the volume_id.
-    ///
-    /// Creates a temporary repo, inserts two Meta objects with different
-    /// volume_ids, removes one, and verifies the correct object was deleted.
+    /// Test that `export()` fails on nonexistent commit.
     #[test]
-    fn test_archive_remove_deletes_meta() {
+    fn test_export_nonexistent_commit() {
         let dir = tempfile::TempDir::new().unwrap();
         let root = dir.path().to_path_buf();
-        let repo = Repository::init(&root).unwrap();
-
-        // Create two Meta objects with different volume_ids
-        let meta1 = Meta::new(100, 1000, 0o644, "hash1".into(), "DVD-REMOVE".into());
-        let meta1_text = meta1.to_text();
-        let meta1_hash = write_object(&repo.objects_path, &meta1_text).unwrap();
-
-        let meta2 = Meta::new(200, 2000, 0o644, "hash2".into(), "DVD-KEEP".into());
-        let meta2_text = meta2.to_text();
-        let meta2_hash = write_object(&repo.objects_path, &meta2_text).unwrap();
-
-        // Verify both objects exist
-        let obj1_path = crate::objects::object_path(&repo.objects_path, &meta1_hash);
-        let obj2_path = crate::objects::object_path(&repo.objects_path, &meta2_hash);
-        assert!(obj1_path.exists(), "meta1 should exist before removal");
-        assert!(obj2_path.exists(), "meta2 should exist before removal");
-
-        // Remove DVD-REMOVE
-        let result = archive_remove_at(&root, "DVD-REMOVE");
-        assert!(result.is_ok(), "archive_remove_at() should succeed");
-
-        // Verify meta1 was deleted and meta2 still exists
-        assert!(!obj1_path.exists(), "meta1 should be deleted");
-        assert!(obj2_path.exists(), "meta2 should still exist");
+        Repository::init(&root).unwrap();
+        let result = export_at(
+            &root,
+            "0000000000000000000000000000000000000000000000000000000000000000",
+            "out.tar",
+        );
+        assert!(result.is_err(), "export() should fail on bad commit hash");
     }
 }
