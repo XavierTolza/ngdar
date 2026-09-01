@@ -25,6 +25,7 @@ pub fn run_ngdar(dir: &Path, args: &[&str]) -> Result<String, String> {
 
 /// Create a fresh temporary repository with a standard set of test files.
 /// Returns the TempDir (kept alive for the lifetime of the test) and the root path.
+#[allow(dead_code)]
 pub fn setup_repo() -> (tempfile::TempDir, std::path::PathBuf) {
     let dir = tempfile::TempDir::new().unwrap();
     let root = dir.path().to_path_buf();

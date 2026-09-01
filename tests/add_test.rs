@@ -44,7 +44,7 @@ fn add_nonexistent_file_errors() {
 
     let binary = assert_cmd::cargo::cargo_bin("ngdar");
     let output = std::process::Command::new(binary)
-        .args(&["add", "nonexistent.txt"])
+        .args(["add", "nonexistent.txt"])
         .current_dir(&root)
         .output()
         .unwrap();

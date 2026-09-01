@@ -786,7 +786,7 @@ fn log_commit_files(repo: &Repository, commit_hash: &str) -> Result<(), NgdarErr
         println!("Parent: {}", parent);
     }
     println!();
-    println!("{:<8} {:<20} {:<64} {}", "Size", "Volume", "Hash", "Path");
+    println!("{:<8} {:<20} {:<64} Path", "Size", "Volume", "Hash");
     println!("{}", "-".repeat(120));
 
     for (meta_hash, _rel_path) in &meta_refs {

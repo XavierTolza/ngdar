@@ -33,7 +33,7 @@ fn extract_tar(root: &Path, tar_path: &Path, name: &str) -> std::path::PathBuf {
     let extract_dir = root.join(name);
     std::fs::create_dir_all(&extract_dir).unwrap();
     let output = Command::new("tar")
-        .args(&["-xf", tar_path.to_str().unwrap()])
+        .args(["-xf", tar_path.to_str().unwrap()])
         .current_dir(&extract_dir)
         .output()
         .unwrap();

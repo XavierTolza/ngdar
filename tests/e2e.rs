@@ -50,7 +50,7 @@ fn extract(root: &Path, tar_path: &Path, dir_name: &str) -> std::path::PathBuf {
     let extract_dir = root.join(dir_name);
     std::fs::create_dir_all(&extract_dir).unwrap();
     let output = Command::new("tar")
-        .args(&["-xf", tar_path.to_str().unwrap()])
+        .args(["-xf", tar_path.to_str().unwrap()])
         .current_dir(&extract_dir)
         .output()
         .unwrap();
