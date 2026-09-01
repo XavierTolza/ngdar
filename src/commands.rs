@@ -197,6 +197,7 @@ pub fn add(paths: &[String]) -> Result<(), NgdarError> {
 
     // Read existing index
     let mut index = repo.read_index()?;
+    let mut new_count: usize = 0;
 
     for path_str in paths {
         let path = if Path::new(path_str).is_absolute() {
@@ -242,12 +243,19 @@ pub fn add(paths: &[String]) -> Result<(), NgdarError> {
                 if ignore_rules.is_ignored(&file_rel) {
                     continue;
                 }
-                add_file(&repo, &mut cache, &file_rel, &mut index)?;
+                if add_file(&repo, &mut cache, &file_rel, &mut index)? {
+                    new_count += 1;
+                }
             }
         } else if path.is_file() {
-            add_file(&repo, &mut cache, rel_str, &mut index)?;
+            if add_file(&repo, &mut cache, rel_str, &mut index)? {
+                new_count += 1;
+            }
         } else {
-            eprintln!("Warning: '{}' is not a file or directory", path_str);
+            return Err(NgdarError::Other(format!(
+                "'{}' is not a file or directory",
+                path_str
+            )));
         }
     }
 
@@ -258,8 +266,7 @@ pub fn add(paths: &[String]) -> Result<(), NgdarError> {
     index.dedup();
     repo.write_index(&index)?;
 
-    let total = index.len();
-    println!("Added {} file(s) to staging area.", total);
+    println!("Added {} file(s) to staging area.", new_count);
     Ok(())
 }
 
@@ -268,7 +275,7 @@ fn add_file(
     cache: &mut CacheStore,
     rel_str: &str,
     index: &mut Vec<String>,
-) -> Result<(), NgdarError> {
+) -> Result<bool, NgdarError> {
     let full_path = repo.path.join(rel_str);
     let metadata = std::fs::metadata(&full_path)?;
     let size = metadata.len();
@@ -288,11 +295,11 @@ fn add_file(
     if !index.contains(&rel_str.to_string()) {
         index.push(rel_str.to_string());
         println!("   added: {}", rel_str);
+        Ok(true)
     } else {
         println!("   already staged: {}", rel_str);
+        Ok(false)
     }
-
-    Ok(())
 }
 
 /// -----------------------------------------------------------------------

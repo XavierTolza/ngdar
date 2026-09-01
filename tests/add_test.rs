@@ -11,7 +11,7 @@ fn add_single_files_shown_in_output() {
 
     let out = common::run_ngdar(&root, &["add", "docs/note.txt"]).unwrap();
     assert!(out.contains("added: docs/note.txt"));
-    assert!(out.contains("Added 2 file(s) to staging area."));
+    assert!(out.contains("Added 1 file(s) to staging area."));
 }
 
 #[test]
@@ -27,16 +27,19 @@ fn add_multiple_files_count() {
 }
 
 #[test]
-fn add_directory_recursively() {
+fn add_directory_recursively_adds_all_files() {
     let (_dir, root) = common::setup_repo();
+    // Add a second file inside docs/
+    std::fs::write(root.join("docs/readme.txt"), "docs readme").unwrap();
 
     let out = common::run_ngdar(&root, &["add", "docs"]).unwrap();
     assert!(out.contains("added: docs/note.txt"));
-    assert!(out.contains("Added 1 file(s) to staging area."));
+    assert!(out.contains("added: docs/readme.txt"));
+    assert!(out.contains("Added 2 file(s) to staging area."));
 }
 
 #[test]
-fn add_nonexistent_file_warns_on_stderr() {
+fn add_nonexistent_file_errors() {
     let (_dir, root) = common::setup_repo();
 
     let binary = assert_cmd::cargo::cargo_bin("ngdar");
@@ -47,16 +50,14 @@ fn add_nonexistent_file_warns_on_stderr() {
         .unwrap();
 
     assert!(
-        output.status.success(),
-        "add should not fail for a missing file"
+        !output.status.success(),
+        "add should fail for a missing file"
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("Warning: 'nonexistent.txt' is not a file or directory"),
-        "stderr should warn: {stderr}"
+        stderr.contains("'nonexistent.txt' is not a file or directory"),
+        "stderr should contain error: {stderr}"
     );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Added 0 file(s) to staging area."));
 }
 
 #[test]
@@ -66,7 +67,7 @@ fn add_already_staged_file_shows_message() {
     common::run_ngdar(&root, &["add", "README.txt"]).unwrap();
     let out = common::run_ngdar(&root, &["add", "README.txt"]).unwrap();
     assert!(out.contains("already staged: README.txt"));
-    assert!(out.contains("Added 1 file(s) to staging area."));
+    assert!(out.contains("Added 0 file(s) to staging area."));
 }
 
 #[test]
