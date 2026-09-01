@@ -357,7 +357,14 @@ pub fn pack(vol_id: &str, out: &str, message: &str) -> Result<(), NgdarError> {
         };
 
         // Create Meta object
-        let meta = Meta::new(size, mtime, perms, binary_hash, vol_id.to_string(), rel_str.clone());
+        let meta = Meta::new(
+            size,
+            mtime,
+            perms,
+            binary_hash,
+            vol_id.to_string(),
+            rel_str.clone(),
+        );
         let meta_text = meta.to_text();
         let meta_hash = write_object(&repo.objects_path, &meta_text)?;
 
@@ -724,7 +731,6 @@ fn log_at(cwd: &Path, commit_hash: Option<&str>) -> Result<(), NgdarError> {
     }
 }
 
-
 /// Walk the commit chain backwards and print each commit.
 fn log_commits(repo: &Repository) -> Result<(), NgdarError> {
     let head = repo.read_head()?;
@@ -747,13 +753,15 @@ fn log_commits(repo: &Repository) -> Result<(), NgdarError> {
         // First line of message
         let msg_first = commit.message.lines().next().unwrap_or(&commit.message);
 
-        println!("commit {}
+        println!(
+            "commit {}
 Author: {}
 Date:   {}
 
     {}
 ",
-            hash, commit.author, ts, msg_first);
+            hash, commit.author, ts, msg_first
+        );
 
         current = commit.parent_hash;
     }
@@ -792,7 +800,10 @@ fn log_commit_files(repo: &Repository, commit_hash: &str) -> Result<(), NgdarErr
                 format!("{}B", meta.size)
             };
             let hash_short: String = meta_hash.chars().take(16).collect();
-            println!("{:<8} {:<20} {:<64} {}", size_str, meta.volume_id, hash_short, meta.path);
+            println!(
+                "{:<8} {:<20} {:<64} {}",
+                size_str, meta.volume_id, hash_short, meta.path
+            );
         }
     }
 
@@ -847,14 +858,22 @@ fn export_at(cwd: &Path, commit_hash: &str, out_path: &str) -> Result<(), NgdarE
 }
 
 /// Internal export implementation that takes a repo reference.
-fn export_with_repo(repo: &Repository, commit_hash: &str, out_path: &str) -> Result<(), NgdarError> {
+fn export_with_repo(
+    repo: &Repository,
+    commit_hash: &str,
+    out_path: &str,
+) -> Result<(), NgdarError> {
     let commit_text = objects::read_object(&repo.objects_path, commit_hash)?;
     let commit = Commit::from_text(&commit_text)?;
     let tree_text = objects::read_object(&repo.objects_path, &commit.tree_hash)?;
     let tree = objects::Tree::from_text(&tree_text)?;
     let mut meta_refs: Vec<(String, String)> = Vec::new();
     collect_meta_with_hashes(&repo.objects_path, &tree, &mut meta_refs, "")?;
-    println!("Exporting {} file(s) from commit {}...", meta_refs.len(), commit_hash);
+    println!(
+        "Exporting {} file(s) from commit {}...",
+        meta_refs.len(),
+        commit_hash
+    );
     let file = std::fs::File::create(out_path)?;
     let mut builder = tar::Builder::new(&file);
     add_dir_to_tar(&mut builder, &repo.ngdar_path, ".ngdar", &repo.ngdar_path)?;
@@ -872,7 +891,10 @@ fn export_with_repo(repo: &Repository, commit_hash: &str, out_path: &str) -> Res
             let actual_hash = hash_file(&full_path)?;
             let actual_hex = hash_to_hex(&actual_hash);
             if actual_hex != meta.binary_hash {
-                eprintln!("Warning: '{}' has been modified (hash mismatch), skipping", meta.path);
+                eprintln!(
+                    "Warning: '{}' has been modified (hash mismatch), skipping",
+                    meta.path
+                );
                 warnings += 1;
                 continue;
             }
@@ -896,7 +918,6 @@ fn export_with_repo(repo: &Repository, commit_hash: &str, out_path: &str) -> Res
     }
     Ok(())
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -992,10 +1013,7 @@ mod tests {
         let root = dir.path().to_path_buf();
         Repository::init(&root).unwrap();
         let result = log_at(&root, None);
-        assert!(
-            result.is_ok(),
-            "log() should succeed even with no commits"
-        );
+        assert!(result.is_ok(), "log() should succeed even with no commits");
     }
 
     /// Test that `export()` fails on nonexistent commit.

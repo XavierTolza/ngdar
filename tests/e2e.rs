@@ -173,11 +173,21 @@ fn test_log_shows_files() {
 
     // Extract commit hash from pack output
     let commit_line = out.lines().find(|l| l.starts_with("Commit:")).unwrap();
-    let commit_hash = commit_line.strip_prefix("Commit: ").unwrap().trim().to_string();
+    let commit_hash = commit_line
+        .strip_prefix("Commit: ")
+        .unwrap()
+        .trim()
+        .to_string();
 
     // Now run log with commit hash
     let out = run_ngdar(&root, &["log", &commit_hash]).unwrap();
-    assert!(out.contains("Commit:"), "log output should show commit: {out}");
-    assert!(out.contains("hello.txt"), "log should list hello.txt: {out}");
+    assert!(
+        out.contains("Commit:"),
+        "log output should show commit: {out}"
+    );
+    assert!(
+        out.contains("hello.txt"),
+        "log should list hello.txt: {out}"
+    );
     assert!(out.contains("DVD-LOG"), "log should show volume_id: {out}");
 }
