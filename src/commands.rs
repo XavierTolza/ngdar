@@ -643,10 +643,7 @@ pub fn archive_content(archive_path: &str) -> Result<(), NgdarError> {
     // Print as a table
     println!("=== Archive Contents: {} ===", archive_path);
     println!();
-    println!(
-        "{:<6} {:<8} {:<20} {:<64}",
-        "Size", "Type", "Path", "Hash"
-    );
+    println!("{:<6} {:<8} {:<20} {:<64}", "Size", "Type", "Path", "Hash");
     println!("{}", "-".repeat(120));
 
     for (path, kind, hash, size) in &entries {
