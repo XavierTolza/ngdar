@@ -1,44 +1,19 @@
 /// Tests for `ngdar pack` — archive creation and TAR contents.
 mod common;
 
+use std::path::Path;
 use std::process::Command;
 
-#[test]
-fn pack_creates_tar_file() {
-    let (_dir, root) = common::setup_repo();
-
-    common::run_ngdar(&root, &["add", "README.txt", "docs/note.txt", "large.bin"]).unwrap();
-    let tar_path = root.join("session_001.tar");
+/// Helper: add all standard files and pack into a tar, returning the tar path.
+fn pack_all(root: &Path, vol_id: &str) -> std::path::PathBuf {
+    common::run_ngdar(root, &["add", "README.txt", "docs/note.txt", "large.bin"]).unwrap();
+    let tar_path = root.join(format!("session_{}.tar", vol_id));
     let out = common::run_ngdar(
-        &root,
+        root,
         &[
             "pack",
             "--vol-id",
-            "DVD-001",
-            "--out",
-            tar_path.to_str().unwrap(),
-            "-m",
-            "First archival session",
-        ],
-    )
-    .unwrap();
-
-    assert!(out.contains("Created archive"));
-    assert!(tar_path.exists(), "tar file should exist");
-}
-
-#[test]
-fn pack_contains_metadata_and_data() {
-    let (_dir, root) = common::setup_repo();
-
-    common::run_ngdar(&root, &["add", "README.txt", "docs/note.txt", "large.bin"]).unwrap();
-    let tar_path = root.join("session_001.tar");
-    common::run_ngdar(
-        &root,
-        &[
-            "pack",
-            "--vol-id",
-            "DVD-001",
+            vol_id,
             "--out",
             tar_path.to_str().unwrap(),
             "-m",
@@ -46,8 +21,16 @@ fn pack_contains_metadata_and_data() {
         ],
     )
     .unwrap();
+    assert!(
+        out.contains("Created archive"),
+        "pack should confirm creation: {out}"
+    );
+    tar_path
+}
 
-    let extract_dir = root.join("extract");
+/// Helper: extract a tar archive into a subdirectory and return the path.
+fn extract_tar(root: &Path, tar_path: &Path, name: &str) -> std::path::PathBuf {
+    let extract_dir = root.join(name);
     std::fs::create_dir_all(&extract_dir).unwrap();
     let output = Command::new("tar")
         .args(&["-xf", tar_path.to_str().unwrap()])
@@ -55,16 +38,28 @@ fn pack_contains_metadata_and_data() {
         .output()
         .unwrap();
     assert!(output.status.success(), "tar extraction failed");
+    extract_dir
+}
 
-    // Verify .ngdar metadata is in the archive
+#[test]
+fn pack_creates_tar_file() {
+    let (_dir, root) = common::setup_repo();
+    let tar_path = pack_all(&root, "DVD-001");
+    assert!(tar_path.exists(), "tar file should exist");
+}
+
+#[test]
+fn pack_contains_metadata_and_data() {
+    let (_dir, root) = common::setup_repo();
+    let tar_path = pack_all(&root, "DVD-001");
+    let extract_dir = extract_tar(&root, &tar_path, "extract");
+
     assert!(
         extract_dir.join(".ngdar").is_dir(),
-        ".ngdir should be in the archive"
+        ".ngdar should be in the archive"
     );
     assert!(extract_dir.join(".ngdar/repository_id").exists());
     assert!(extract_dir.join(".ngdar/objects").is_dir());
-
-    // Verify data files are in the archive
     assert!(
         extract_dir.join("data/README.txt").exists(),
         "data/README.txt missing"
@@ -82,67 +77,23 @@ fn pack_contains_metadata_and_data() {
 #[test]
 fn pack_data_files_have_correct_contents() {
     let (_dir, root) = common::setup_repo();
+    let tar_path = pack_all(&root, "DVD-001");
+    let extract_dir = extract_tar(&root, &tar_path, "extract");
 
-    common::run_ngdar(&root, &["add", "README.txt", "docs/note.txt", "large.bin"]).unwrap();
-    let tar_path = root.join("session_001.tar");
-    common::run_ngdar(
-        &root,
-        &[
-            "pack",
-            "--vol-id",
-            "DVD-001",
-            "--out",
-            tar_path.to_str().unwrap(),
-            "-m",
-            "test",
-        ],
-    )
-    .unwrap();
-
-    let extract_dir = root.join("extract");
-    std::fs::create_dir_all(&extract_dir).unwrap();
-    Command::new("tar")
-        .args(&["-xf", tar_path.to_str().unwrap()])
-        .current_dir(&extract_dir)
-        .output()
-        .unwrap();
-
-    let readme_content = std::fs::read_to_string(extract_dir.join("data/README.txt")).unwrap();
-    assert_eq!(readme_content, "ngdar test project");
-    let note_content = std::fs::read_to_string(extract_dir.join("data/docs/note.txt")).unwrap();
-    assert_eq!(note_content, "incremental backup test");
-    let bin_content = std::fs::read(extract_dir.join("data/large.bin")).unwrap();
-    assert_eq!(bin_content.len(), 1024);
-    assert!(bin_content.iter().all(|&b| b == 0xAB));
+    let readme = std::fs::read_to_string(extract_dir.join("data/README.txt")).unwrap();
+    assert_eq!(readme, "ngdar test project");
+    let note = std::fs::read_to_string(extract_dir.join("data/docs/note.txt")).unwrap();
+    assert_eq!(note, "incremental backup test");
+    let bin = std::fs::read(extract_dir.join("data/large.bin")).unwrap();
+    assert_eq!(bin.len(), 1024);
+    assert!(bin.iter().all(|&b| b == 0xAB));
 }
 
 #[test]
 fn pack_objects_are_plain_text_meta_with_volume_id() {
     let (_dir, root) = common::setup_repo();
-
-    common::run_ngdar(&root, &["add", "README.txt", "docs/note.txt", "large.bin"]).unwrap();
-    let tar_path = root.join("session_001.tar");
-    common::run_ngdar(
-        &root,
-        &[
-            "pack",
-            "--vol-id",
-            "DVD-001",
-            "--out",
-            tar_path.to_str().unwrap(),
-            "-m",
-            "test",
-        ],
-    )
-    .unwrap();
-
-    let extract_dir = root.join("extract");
-    std::fs::create_dir_all(&extract_dir).unwrap();
-    Command::new("tar")
-        .args(&["-xf", tar_path.to_str().unwrap()])
-        .current_dir(&extract_dir)
-        .output()
-        .unwrap();
+    let tar_path = pack_all(&root, "DVD-001");
+    let extract_dir = extract_tar(&root, &tar_path, "extract");
 
     let objects_dir = extract_dir.join(".ngdar/objects");
     let mut has_meta = false;
@@ -163,7 +114,7 @@ fn pack_objects_are_plain_text_meta_with_volume_id() {
 fn pack_error_with_empty_index() {
     let (_dir, root) = common::setup_repo();
 
-    let tar_path = root.join("session_001.tar");
+    let tar_path = root.join("session_DVD-001.tar");
     let result = common::run_ngdar(
         &root,
         &[
@@ -176,7 +127,13 @@ fn pack_error_with_empty_index() {
             "test",
         ],
     );
-    assert!(result.is_err(), "pack without add should fail");
+    match result {
+        Err(msg) => assert!(
+            msg.contains("Nothing to pack"),
+            "error should mention nothing to pack: {msg}"
+        ),
+        Ok(_) => panic!("pack with empty index should fail"),
+    }
 }
 
 #[test]
@@ -190,5 +147,11 @@ fn pack_before_init_errors() {
             "pack", "--vol-id", "DVD-001", "--out", "out.tar", "-m", "test",
         ],
     );
-    assert!(result.is_err(), "pack without init should fail");
+    match result {
+        Err(msg) => assert!(
+            msg.contains("Not an ngdar repository"),
+            "error should mention repo not found: {msg}"
+        ),
+        Ok(_) => panic!("pack without init should fail"),
+    }
 }
