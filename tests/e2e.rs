@@ -61,20 +61,14 @@ fn extract(root: &Path, tar_path: &Path, dir_name: &str) -> std::path::PathBuf {
 /// Assert that an extracted archive contains data files.
 fn assert_data_files(extract_dir: &Path, files: &[&str]) {
     for f in files {
-        assert!(
-            extract_dir.join("data").join(f).exists(),
-            "data/{f} missing"
-        );
+        assert!(extract_dir.join(f).exists(), "{f} missing");
     }
 }
 
 /// Assert that an extracted archive does NOT contain data files.
 fn assert_no_data_files(extract_dir: &Path, files: &[&str]) {
     for f in files {
-        assert!(
-            !extract_dir.join("data").join(f).exists(),
-            "data/{f} should NOT be present"
-        );
+        assert!(!extract_dir.join(f).exists(), "{f} should NOT be present");
     }
 }
 
@@ -120,7 +114,7 @@ fn test_full_workflow() {
     assert!(ext1.join(".ngdar").is_dir());
     assert_data_files(&ext1, &["README.txt", "docs/note.txt", "large.bin"]);
     assert_eq!(
-        std::fs::read_to_string(ext1.join("data/README.txt")).unwrap(),
+        std::fs::read_to_string(ext1.join("README.txt")).unwrap(),
         "ngdar test project"
     );
     assert_meta_has_volume_id(&ext1, "DVD-001");
@@ -192,7 +186,6 @@ fn test_archive_content_e2e() {
         out.contains("hello.txt"),
         "output should list the data file"
     );
-    assert!(out.contains("data/"), "output should show data directory");
     assert!(
         out.contains(".ngdar/"),
         "output should show .ngdar metadata"

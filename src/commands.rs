@@ -423,7 +423,7 @@ fn hostname() -> String {
 
 /// Build the TAR archive containing:
 /// 1. The full `.ngdar/` metadata directory (all objects, HEAD, index, repo id)
-/// 2. The `data/` directory with the actual binary files for this session
+/// 2. The actual binary files for this session, stored at the archive root
 fn build_tar_archive(
     repo: &Repository,
     staged_files: &[String],
@@ -437,10 +437,10 @@ fn build_tar_archive(
     // --- Add full .ngdar/ metadata directory ---
     add_dir_to_tar(&mut builder, &repo.ngdar_path, ".ngdar", &repo.ngdar_path)?;
 
-    // --- Add data/ files with original tree structure ---
+    // --- Add files with original tree structure ---
     for rel_path in staged_files {
         let full_path = repo.path.join(rel_path);
-        let data_tar_path = format!("data/{}", rel_path);
+        let data_tar_path = rel_path.to_string();
         let file_data = std::fs::read(&full_path)?;
         let metadata = std::fs::metadata(&full_path)?;
 
@@ -540,6 +540,9 @@ pub fn hash(path: &str) -> Result<(), NgdarError> {
 /// - **Type**: entry type (file, meta, tree, commit, directory)
 /// - **Hash**: BLAKE3 hash (for object entries)
 /// - **Size**: file size in bytes
+///
+/// Entries parsed from `.ngdar/objects/` use the value of `binary_hash`
+/// from the source Meta object as the displayed path.
 pub fn archive_content(archive_path: &str) -> Result<(), NgdarError> {
     let file = std::fs::File::open(archive_path)
         .map_err(|e| NgdarError::Other(format!("Cannot open archive '{}': {}", archive_path, e)))?;
@@ -577,7 +580,7 @@ pub fn archive_content(archive_path: &str) -> Result<(), NgdarError> {
                         .unwrap_or(&path)
                         .replace('/', "");
                     entries.push((
-                        format!("data/{}", meta.binary_hash),
+                        meta.binary_hash.clone(),
                         "meta".to_string(),
                         obj_hash,
                         meta.size,
