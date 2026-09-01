@@ -6,7 +6,6 @@ use std::path::Path;
 /// Object storage — each object is stored as a text file named by its BLAKE3
 /// hash in `.ngdar/objects/<first-two-chars>/<rest-of-hash>`.
 /// ---------------------------------------------------------------------------
-
 /// Compute the storage path for an object given its hex hash.
 ///
 /// Objects are sharded into subdirectories by the first two hex characters
@@ -48,7 +47,6 @@ pub fn read_object(objects_dir: &Path, hex_hash: &str) -> Result<String, NgdarEr
 /// Meta object — represents a file's metadata and its physical volume location.
 /// Does NOT contain the binary data.
 /// ---------------------------------------------------------------------------
-
 /// Metadata about a tracked file.
 ///
 /// Stores file size, modification time, permissions, the BLAKE3 hash of the
@@ -168,7 +166,6 @@ impl Meta {
 /// Each entry is either a `"tree"` (referencing a subdirectory Tree object)
 /// or a `"meta"` (referencing a Meta object). Entries are sorted by name.
 /// ---------------------------------------------------------------------------
-
 /// A single entry in a Tree object.
 #[derive(Debug, Clone)]
 pub struct TreeEntry {
@@ -244,7 +241,6 @@ impl Tree {
 /// ---------------------------------------------------------------------------
 /// Commit object — a snapshot of the entire repository state.
 /// ---------------------------------------------------------------------------
-
 /// A Commit object — a snapshot of the entire repository state.
 ///
 /// Contains a reference to the root Tree object, an optional parent commit,
@@ -389,7 +385,6 @@ impl Commit {
 /// ---------------------------------------------------------------------------
 /// High-level helpers for building tree objects from index entries.
 /// ---------------------------------------------------------------------------
-
 /// Build a tree structure from a list of staged (indexed) files.
 ///
 /// Takes a list of `(rel_path, meta_hash)` pairs and constructs a

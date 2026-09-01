@@ -649,10 +649,7 @@ pub fn archive_content(archive_path: &str) -> Result<(), NgdarError> {
     // Print as a table
     println!("=== Archive Contents: {} ===", archive_path);
     println!();
-    println!(
-        "{:<6} {:<8} {:<20} {:<64}",
-        "Size", "Type", "Path", "Hash"
-    );
+    println!("{:<6} {:<8} {:<20} {:<64}", "Size", "Type", "Path", "Hash");
     println!("{}", "-".repeat(120));
 
     for (path, kind, hash, size) in &entries {
@@ -987,6 +984,12 @@ pub fn archive_remove(vol_id: &str) -> Result<(), NgdarError> {
 mod tests {
     use super::*;
     use std::io::Write;
+    use std::sync::{LazyLock, Mutex};
+
+    /// Global lock to serialize tests that change the current directory.
+    /// Because `set_current_dir` is process-wide, parallel execution of
+    /// such tests causes races.
+    static CWD_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
     /// Test that `hash()` correctly computes the BLAKE3 hash of a file.
     ///
@@ -1031,6 +1034,7 @@ mod tests {
     /// the expected columns and data.
     #[test]
     fn test_db_export_creates_csv() {
+        let _lock = CWD_LOCK.lock().unwrap();
         let dir = tempfile::TempDir::new().unwrap();
         let root = dir.path().to_path_buf();
         let original_dir = std::env::current_dir().ok();
@@ -1089,6 +1093,7 @@ mod tests {
     /// different volume_id — the command should succeed but report 0 removals.
     #[test]
     fn test_archive_remove_no_match() {
+        let _lock = CWD_LOCK.lock().unwrap();
         let dir = tempfile::TempDir::new().unwrap();
         let root = dir.path().to_path_buf();
         let original_dir = std::env::current_dir().ok();
