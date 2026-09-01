@@ -2,30 +2,7 @@
 ///
 /// Tests the hash command via the CLI: computing hashes of files,
 /// verifying output format (64-char hex), and handling of non-existent files.
-use std::path::Path;
-use std::process::Command;
-
-/// Helper to run `ngdar` CLI in a given directory.
-fn run_ngdar(dir: &Path, args: &[&str]) -> Result<String, String> {
-    let binary = assert_cmd::cargo::cargo_bin("ngdar");
-    let output = Command::new(binary)
-        .args(args)
-        .current_dir(dir)
-        .output()
-        .map_err(|e| format!("Failed to run ngdar: {}", e))?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-
-    if !output.status.success() {
-        return Err(format!(
-            "ngdar failed (exit {}): {}{}",
-            output.status, stderr, stdout
-        ));
-    }
-
-    Ok(stdout)
-}
+mod common;
 
 #[test]
 fn test_hash_command() {
@@ -34,7 +11,7 @@ fn test_hash_command() {
 
     std::fs::write(root.join("test.txt"), "ngdar hash test").unwrap();
 
-    let out = run_ngdar(&root, &["hash", "test.txt"]).unwrap();
+    let out = common::run_ngdar(&root, &["hash", "test.txt"]).unwrap();
     // Output should be a 64-char hex hash followed by the filename
     assert!(
         out.len() >= 64,
@@ -55,6 +32,6 @@ fn test_hash_nonexistent_file() {
     let dir = tempfile::TempDir::new().unwrap();
     let root = dir.path().to_path_buf();
 
-    let result = run_ngdar(&root, &["hash", "nonexistent.txt"]);
+    let result = common::run_ngdar(&root, &["hash", "nonexistent.txt"]);
     assert!(result.is_err(), "hash should fail for nonexistent file");
 }

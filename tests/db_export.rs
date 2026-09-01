@@ -3,30 +3,7 @@
 /// Tests the db-export command via the CLI: creating an archive and
 /// then exporting the database to CSV, verifying all expected columns
 /// and object types (meta, tree, commit) are present.
-use std::path::Path;
-use std::process::Command;
-
-/// Helper to run `ngdar` CLI in a given directory.
-fn run_ngdar(dir: &Path, args: &[&str]) -> Result<String, String> {
-    let binary = assert_cmd::cargo::cargo_bin("ngdar");
-    let output = Command::new(binary)
-        .args(args)
-        .current_dir(dir)
-        .output()
-        .map_err(|e| format!("Failed to run ngdar: {}", e))?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-
-    if !output.status.success() {
-        return Err(format!(
-            "ngdar failed (exit {}): {}{}",
-            output.status, stderr, stdout
-        ));
-    }
-
-    Ok(stdout)
-}
+mod common;
 
 #[test]
 fn test_db_export() {
@@ -35,11 +12,11 @@ fn test_db_export() {
 
     // Create a test file and run the full workflow
     std::fs::write(root.join("data.bin"), "binary data for export test").unwrap();
-    run_ngdar(&root, &["init"]).unwrap();
-    run_ngdar(&root, &["add", "data.bin"]).unwrap();
+    common::run_ngdar(&root, &["init"]).unwrap();
+    common::run_ngdar(&root, &["add", "data.bin"]).unwrap();
 
     let tar_path = root.join("archive.tar");
-    run_ngdar(
+    common::run_ngdar(
         &root,
         &[
             "pack",
@@ -55,7 +32,7 @@ fn test_db_export() {
 
     // Export the database
     let csv_path = root.join("export.csv");
-    let out = run_ngdar(&root, &["db-export", csv_path.to_str().unwrap()]).unwrap();
+    let out = common::run_ngdar(&root, &["db-export", csv_path.to_str().unwrap()]).unwrap();
     assert!(out.contains("Exported"), "output should confirm export");
     assert!(csv_path.exists(), "CSV file should exist");
 
