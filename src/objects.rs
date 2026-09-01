@@ -6,13 +6,21 @@ use std::path::Path;
 /// Object storage — each object is stored as a text file named by its BLAKE3
 /// hash in `.ngdar/objects/<first-two-chars>/<rest-of-hash>`.
 /// ---------------------------------------------------------------------------
+
 /// Compute the storage path for an object given its hex hash.
+///
+/// Objects are sharded into subdirectories by the first two hex characters
+/// to avoid excessive directory entries (e.g., `objects/ab/cdef...`).
 pub fn object_path(objects_dir: &Path, hex_hash: &str) -> std::path::PathBuf {
     let (prefix, rest) = hex_hash.split_at(2);
     objects_dir.join(prefix).join(rest)
 }
 
 /// Write an object to the store, returning its BLAKE3 hex hash.
+///
+/// The content is hashed with BLAKE3 to determine the storage path.
+/// If the object already exists, it is not overwritten (content-addressable
+/// storage guarantees deduplication).
 pub fn write_object(objects_dir: &Path, content: &str) -> Result<String, NgdarError> {
     let hash = hash_string(content);
     let hex = hash_to_hex(&hash);
@@ -27,6 +35,9 @@ pub fn write_object(objects_dir: &Path, content: &str) -> Result<String, NgdarEr
 }
 
 /// Read an object from the store by its hex hash.
+///
+/// Returns the object's text content. Returns an error if the object file
+/// does not exist.
 pub fn read_object(objects_dir: &Path, hex_hash: &str) -> Result<String, NgdarError> {
     let path = object_path(objects_dir, hex_hash);
     std::fs::read_to_string(&path)
@@ -37,16 +48,28 @@ pub fn read_object(objects_dir: &Path, hex_hash: &str) -> Result<String, NgdarEr
 /// Meta object — represents a file's metadata and its physical volume location.
 /// Does NOT contain the binary data.
 /// ---------------------------------------------------------------------------
+
+/// Metadata about a tracked file.
+///
+/// Stores file size, modification time, permissions, the BLAKE3 hash of the
+/// file's binary content, and the volume ID of the archive where the binary
+/// was stored.
 #[derive(Debug, Clone)]
 pub struct Meta {
+    /// File size in bytes.
     pub size: u64,
+    /// File modification time (Unix timestamp).
     pub mtime: i64,
+    /// Unix file permissions (e.g., `0o644`).
     pub permissions: u32,
+    /// BLAKE3 hash of the file's binary content.
     pub binary_hash: String,
+    /// Volume identifier (e.g., "DVD-001", "ARCHIVE-2026-08").
     pub volume_id: String,
 }
 
 impl Meta {
+    /// Create a new Meta object.
     pub fn new(
         size: u64,
         mtime: i64,
@@ -64,6 +87,16 @@ impl Meta {
     }
 
     /// Serialize to the text format used in object storage.
+    ///
+    /// Format:
+    /// ```text
+    /// type meta
+    /// size <bytes>
+    /// mtime <unix_ts>
+    /// permissions <octal>
+    /// binary_hash <blake3_hex>
+    /// volume_id <id>
+    /// ```
     pub fn to_text(&self) -> String {
         format!(
             "type meta\n\
@@ -76,8 +109,7 @@ impl Meta {
         )
     }
 
-    /// Parse from the text format. Only used in tests.
-    #[cfg(test)]
+    /// Parse a Meta object from its text representation.
     pub(crate) fn from_text(text: &str) -> Result<Self, NgdarError> {
         let mut size = None;
         let mut mtime = None;
@@ -133,28 +165,40 @@ impl Meta {
 
 /// ---------------------------------------------------------------------------
 /// Tree object — a snapshot of a directory at a point in time.
-/// Each line is either "tree <hash> <name>" or "meta <hash> <name>".
-/// Entries are sorted by name.
+/// Each entry is either a `"tree"` (referencing a subdirectory Tree object)
+/// or a `"meta"` (referencing a Meta object). Entries are sorted by name.
 /// ---------------------------------------------------------------------------
+
+/// A single entry in a Tree object.
 #[derive(Debug, Clone)]
 pub struct TreeEntry {
-    pub kind: String, // "tree" or "meta"
+    /// Entry kind: `"tree"` for subdirectories, `"meta"` for files.
+    pub kind: String,
+    /// BLAKE3 hash of the referenced object (Tree or Meta).
     pub hash: String,
+    /// File or directory name (not a full path).
     pub name: String,
 }
 
+/// A Tree object — a snapshot of a directory at a point in time.
+///
+/// Each entry is either a `"tree"` (referencing a subdirectory Tree object)
+/// or a `"meta"` (referencing a Meta object). Entries are sorted by name.
 #[derive(Debug, Clone)]
 pub struct Tree {
+    /// Entries in this tree, sorted by name.
     pub entries: Vec<TreeEntry>,
 }
 
 impl Tree {
+    /// Create a new empty Tree.
     pub fn new() -> Self {
         Tree {
             entries: Vec::new(),
         }
     }
 
+    /// Add an entry to the tree, maintaining sort order by name.
     pub fn add(&mut self, kind: &str, hash: String, name: String) {
         self.entries.push(TreeEntry {
             kind: kind.to_string(),
@@ -164,6 +208,9 @@ impl Tree {
         self.entries.sort_by(|a, b| a.name.cmp(&b.name));
     }
 
+    /// Serialize to the text format.
+    ///
+    /// Format: one `<kind> <hash> <name>` per line.
     pub fn to_text(&self) -> String {
         let mut s = String::new();
         for entry in &self.entries {
@@ -172,6 +219,7 @@ impl Tree {
         s
     }
 
+    /// Parse a Tree object from its text representation.
     pub fn from_text(text: &str) -> Result<Self, NgdarError> {
         let mut entries = Vec::new();
         for line in text.lines() {
@@ -196,18 +244,31 @@ impl Tree {
 /// ---------------------------------------------------------------------------
 /// Commit object — a snapshot of the entire repository state.
 /// ---------------------------------------------------------------------------
+
+/// A Commit object — a snapshot of the entire repository state.
+///
+/// Contains a reference to the root Tree object, an optional parent commit,
+/// authorship and provenance metadata, a timestamp, and a commit message.
 #[derive(Debug, Clone)]
 pub struct Commit {
+    /// BLAKE3 hash of the root Tree object.
     pub tree_hash: String,
+    /// Optional hash of the parent commit (`None` for the first commit).
     pub parent_hash: Option<String>,
+    /// Author string (e.g., `"user <user@host>"`).
     pub author: String,
+    /// Operating system string (e.g., `"Linux x86_64"`).
     pub os: String,
+    /// Tool version (e.g., `"ngdar-1.0.0"`).
     pub tool_version: String,
+    /// Commit timestamp (Unix seconds since epoch).
     pub timestamp: i64,
+    /// Commit message.
     pub message: String,
 }
 
 impl Commit {
+    /// Create a new Commit object.
     pub fn new(
         tree_hash: String,
         parent_hash: Option<String>,
@@ -228,6 +289,19 @@ impl Commit {
         }
     }
 
+    /// Serialize to the text format used in object storage.
+    ///
+    /// Format:
+    /// ```text
+    /// tree <hash>
+    /// parent <hash-or-none>
+    /// author <string>
+    /// os <string>
+    /// tool_version <string>
+    /// timestamp <unix_ts>
+    ///
+    /// <message>
+    /// ```
     pub fn to_text(&self) -> String {
         let parent = match &self.parent_hash {
             Some(hash) => format!("parent {}", hash),
@@ -252,6 +326,7 @@ impl Commit {
         )
     }
 
+    /// Parse a Commit object from its text representation.
     pub fn from_text(text: &str) -> Result<Self, NgdarError> {
         let mut tree_hash = None;
         let mut parent_hash = None;
@@ -314,8 +389,15 @@ impl Commit {
 /// ---------------------------------------------------------------------------
 /// High-level helpers for building tree objects from index entries.
 /// ---------------------------------------------------------------------------
+
 /// Build a tree structure from a list of staged (indexed) files.
-/// Returns the tree hash and a list of (meta_hash, file_rel_path) for all leaf files.
+///
+/// Takes a list of `(rel_path, meta_hash)` pairs and constructs a
+/// hierarchical tree of Tree objects in the object store. Returns the
+/// root tree hash and a list of `(meta_hash, rel_path)` for all leaf files.
+///
+/// Directories are created bottom-up: subdirectory tree objects are built
+/// first and then referenced by their parent directory tree objects.
 pub fn build_tree_from_index(
     objects_dir: &Path,
     staged_files: &[(&str, &str)], // (rel_path, meta_hash) pairs

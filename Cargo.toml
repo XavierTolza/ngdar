@@ -13,6 +13,7 @@ chrono = "0.4"
 walkdir = "2"
 tar = "0.4"
 regex = "1"
+csv = "1"
 
 [dev-dependencies]
 tempfile = "3"

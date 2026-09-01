@@ -29,6 +29,14 @@ jobs:
       - name: Build
         run: cargo build --release
 
+      - name: Check documentation coverage
+        run: |
+          pip install -q tomli 2>/dev/null || true
+          python3 scripts/doc-coverage.py --min 100
+
+      - name: Build documentation
+        run: RUSTDOCFLAGS='-D warnings' cargo doc --document-private-items
+
       - name: Run unit tests
         run: cargo test
 

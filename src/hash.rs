@@ -1,7 +1,15 @@
+//! BLAKE3 hashing utilities for file and string content.
+//!
+//! Provides functions for computing BLAKE3 hashes of files, byte slices,
+//! and strings, as well as hex encoding.
+
 use blake3::Hash;
 use std::io::Read;
 
 /// Compute the BLAKE3 hash of a file's contents.
+///
+/// Reads the file in 64 KiB chunks to avoid loading large files entirely
+/// into memory.
 pub fn hash_file(path: &std::path::Path) -> Result<Hash, crate::error::NgdarError> {
     let mut file = std::fs::File::open(path).map_err(|e| {
         crate::error::NgdarError::Hash(format!("Cannot open {}: {}", path.display(), e))
