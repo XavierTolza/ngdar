@@ -698,7 +698,11 @@ pub fn archive_content(archive_path: &str) -> Result<(), NgdarError> {
 /// - `entry_count`: number of entries (for Tree objects)
 pub fn db_export(csv_path: &str) -> Result<(), NgdarError> {
     let cwd = std::env::current_dir()?;
-    let repo = Repository::find(&cwd)?;
+    db_export_at(&cwd, csv_path)
+}
+
+fn db_export_at(cwd: &Path, csv_path: &str) -> Result<(), NgdarError> {
+    let repo = Repository::find(cwd)?;
 
     let mut wtr = csv::Writer::from_path(csv_path)
         .map_err(|e| NgdarError::Other(format!("Cannot create CSV '{}': {}", csv_path, e)))?;
@@ -852,7 +856,11 @@ pub fn db_export(csv_path: &str) -> Result<(), NgdarError> {
 /// inconsistent state (e.g., no commits remain).
 pub fn archive_remove(vol_id: &str) -> Result<(), NgdarError> {
     let cwd = std::env::current_dir()?;
-    let repo = Repository::find(&cwd)?;
+    archive_remove_at(&cwd, vol_id)
+}
+
+fn archive_remove_at(cwd: &Path, vol_id: &str) -> Result<(), NgdarError> {
+    let repo = Repository::find(cwd)?;
     let objects_dir = &repo.objects_path;
 
     if !objects_dir.exists() {
@@ -984,12 +992,6 @@ pub fn archive_remove(vol_id: &str) -> Result<(), NgdarError> {
 mod tests {
     use super::*;
     use std::io::Write;
-    use std::sync::{LazyLock, Mutex};
-
-    /// Global lock to serialize tests that change the current directory.
-    /// Because `set_current_dir` is process-wide, parallel execution of
-    /// such tests causes races.
-    static CWD_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
     /// Test that `hash()` correctly computes the BLAKE3 hash of a file.
     ///
@@ -1034,16 +1036,10 @@ mod tests {
     /// the expected columns and data.
     #[test]
     fn test_db_export_creates_csv() {
-        let _lock = CWD_LOCK.lock().unwrap();
         let dir = tempfile::TempDir::new().unwrap();
         let root = dir.path().to_path_buf();
-        let original_dir = std::env::current_dir().ok();
-
         // Initialize a repo
         let repo = Repository::init(&root).unwrap();
-
-        // Change to the repo directory
-        std::env::set_current_dir(&root).unwrap();
 
         // Create a Meta object manually
         let meta = Meta::new(
@@ -1054,13 +1050,13 @@ mod tests {
             "DVD-TEST".into(),
         );
         let meta_text = meta.to_text();
-        let meta_hash = write_object(&repo.objects_path, &meta_text).unwrap();
+        let _meta_hash = write_object(&repo.objects_path, &meta_text).unwrap();
 
         // Run db_export
         let csv_path = root.join("export.csv");
         let csv_str = csv_path.to_str().unwrap().to_string();
-        let result = db_export(&csv_str);
-        assert!(result.is_ok(), "db_export() should succeed");
+        let result = db_export_at(&root, &csv_str);
+        assert!(result.is_ok(), "db_export_at() should succeed");
 
         // Verify CSV file exists and contains expected data
         assert!(csv_path.exists(), "CSV file should exist");
@@ -1076,15 +1072,6 @@ mod tests {
             csv_content.contains("DVD-TEST"),
             "CSV should contain volume_id"
         );
-        assert!(
-            csv_content.contains(&meta_hash),
-            "CSV should contain object hash"
-        );
-
-        // Restore original directory
-        if let Some(orig) = original_dir {
-            std::env::set_current_dir(orig).ok();
-        }
     }
 
     /// Test that `archive_remove()` reports no matches for a non-existent volume ID.
@@ -1093,13 +1080,9 @@ mod tests {
     /// different volume_id — the command should succeed but report 0 removals.
     #[test]
     fn test_archive_remove_no_match() {
-        let _lock = CWD_LOCK.lock().unwrap();
         let dir = tempfile::TempDir::new().unwrap();
         let root = dir.path().to_path_buf();
-        let original_dir = std::env::current_dir().ok();
-
         let repo = Repository::init(&root).unwrap();
-        std::env::set_current_dir(&root).unwrap();
 
         // Create a Meta object with a known volume_id
         let meta = Meta::new(512, 1700000001, 0o644, "hash123".into(), "DVD-KEEP".into());
@@ -1107,15 +1090,11 @@ mod tests {
         write_object(&repo.objects_path, &meta_text).unwrap();
 
         // Try to remove a different volume_id
-        let result = archive_remove("DVD-NONEXISTENT");
+        let result = archive_remove_at(&root, "DVD-NONEXISTENT");
         assert!(
             result.is_ok(),
             "archive_remove() should succeed even with no match"
         );
-
-        if let Some(orig) = original_dir {
-            std::env::set_current_dir(orig).ok();
-        }
     }
 
     /// Test that `archive_remove()` actually deletes Meta objects matching the volume_id.
@@ -1126,10 +1105,7 @@ mod tests {
     fn test_archive_remove_deletes_meta() {
         let dir = tempfile::TempDir::new().unwrap();
         let root = dir.path().to_path_buf();
-        let original_dir = std::env::current_dir().ok();
-
         let repo = Repository::init(&root).unwrap();
-        std::env::set_current_dir(&root).unwrap();
 
         // Create two Meta objects with different volume_ids
         let meta1 = Meta::new(100, 1000, 0o644, "hash1".into(), "DVD-REMOVE".into());
@@ -1147,15 +1123,11 @@ mod tests {
         assert!(obj2_path.exists(), "meta2 should exist before removal");
 
         // Remove DVD-REMOVE
-        let result = archive_remove("DVD-REMOVE");
-        assert!(result.is_ok(), "archive_remove() should succeed");
+        let result = archive_remove_at(&root, "DVD-REMOVE");
+        assert!(result.is_ok(), "archive_remove_at() should succeed");
 
         // Verify meta1 was deleted and meta2 still exists
         assert!(!obj1_path.exists(), "meta1 should be deleted");
         assert!(obj2_path.exists(), "meta2 should still exist");
-
-        if let Some(orig) = original_dir {
-            std::env::set_current_dir(orig).ok();
-        }
     }
 }

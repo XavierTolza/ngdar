@@ -2,6 +2,7 @@
 /// Also tests the utility commands: hash, archive-content, db-export, archive-remove.
 mod common;
 
+use common::run_ngdar;
 use std::path::Path;
 use std::process::Command;
 
