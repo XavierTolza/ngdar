@@ -1,6 +1,7 @@
 use super::*;
 use crate::objects::Meta;
 
+/// Export the object database as a CSV file.
 pub fn db_export(csv_path: &str) -> Result<(), NgdarError> {
     let cwd = std::env::current_dir()?;
     db_export_at(&cwd, csv_path)

@@ -1,8 +1,27 @@
-/// Integration tests for `ngdar hash <file>`.
-///
-/// Tests the hash command via the CLI: computing hashes of files,
-/// verifying output format (64-char hex), and handling of non-existent files.
+use ngdar::hash::{hash_string, hash_to_hex};
+
 mod common;
+
+#[test]
+fn test_hash_bytes_consistency() {
+    // hash_string is the public equivalent of hash_bytes
+    let h1 = hash_string("hello world");
+    let h2 = hash_string("hello world");
+    assert_eq!(h1, h2);
+}
+
+#[test]
+fn test_hash_different_inputs() {
+    let h1 = hash_string("content a");
+    let h2 = hash_string("content b");
+    assert_ne!(h1, h2);
+}
+
+#[test]
+fn test_hash_hex_length() {
+    let h = hash_string("test");
+    assert_eq!(hash_to_hex(&h).len(), 64);
+}
 
 #[test]
 fn test_hash_command() {

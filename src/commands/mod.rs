@@ -167,15 +167,23 @@ fn build_tar_archive(
 }
 
 // ---------------------------------------------------------------------------
-// Command modules
+// Command submodules — each exposes a single `pub fn` for its verb.
 // ---------------------------------------------------------------------------
+/// `ngdar add <paths>` — stage files for the next archive.
 pub mod add;
+/// `ngdar db-export <csv>` — export object database as CSV.
 pub mod db_export;
+/// `ngdar export <commit> <out>` — extract files from a commit.
 pub mod export;
+/// `ngdar hash <file>` — print BLAKE3 hash of a file.
 pub mod hash;
+/// `ngdar init` — initialise a new repository.
 pub mod init;
+/// `ngdar log [commit]` — show commit history.
 pub mod log;
+/// `ngdar pack --vol-id <ID> --out <file.tar> -m <msg>` — create archive.
 pub mod pack;
+/// `ngdar status` — show staged, unstaged, untracked files.
 pub mod status;
 
 pub use add::add;

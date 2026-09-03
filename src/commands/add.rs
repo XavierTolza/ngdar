@@ -1,5 +1,6 @@
 use super::*;
 
+/// Stage files for the next archive.
 pub fn add(paths: &[String]) -> Result<(), NgdarError> {
     let cwd = std::env::current_dir()?;
     let repo = Repository::find(&cwd)?;

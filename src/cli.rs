@@ -1,7 +1,7 @@
 //! CLI argument parsing and command definitions.
 //!
-//! Uses [`clap`] for argument parsing. Defines the top-level [`Cli`] struct
-//! and the [`Commands`] enum with all subcommands.
+//! Uses clap for argument parsing. Defines the top-level Cli struct
+//! and the Commands enum with all subcommands.
 
 use clap::{Parser, Subcommand};
 

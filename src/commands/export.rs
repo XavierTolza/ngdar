@@ -1,6 +1,7 @@
 use super::*;
 use crate::objects::{self, Commit, Meta};
 
+/// Extract files from a specific commit into an output directory.
 pub fn export(commit_hash: &str, out_path: &str) -> Result<(), NgdarError> {
     let cwd = std::env::current_dir()?;
     let repo = Repository::find(&cwd)?;
