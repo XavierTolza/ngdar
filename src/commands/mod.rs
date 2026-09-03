@@ -1,6 +1,6 @@
 //! Command implementations — each subcommand has its own module.
 //!
-//! The [`crate::commands::mod`] re-exports all public command functions.
+//! The [`crate::commands`] module re-exports all public command functions.
 //! Shared helper utilities used by multiple commands live here.
 
 use crate::cache::CacheStore;
