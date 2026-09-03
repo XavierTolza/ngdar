@@ -1,0 +1,113 @@
+# NGDAR — Pre-commit & Pre-push Configuration
+# See https://pre-commit.com for docs
+#
+# Pre-commit hooks:  quick guardrails on every commit
+# Pre-push hooks:    full CI checks before pushing
+
+repos:
+  # ──────────────────────────────────────────────
+  # Pre-commit: universal sanitizers
+  # ──────────────────────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+      - id: check-added-large-files
+        args: [--maxkb=500]
+      - id: check-merge-conflict
+      - id: check-symlinks
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: check-case-conflict
+      - id: check-executables-have-shebangs
+
+  # ──────────────────────────────────────────────
+  # Pre-commit: Rust quick checks
+  # ──────────────────────────────────────────────
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: cargo fmt --check (staged files)
+        entry: cargo fmt --check
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+
+      # Forbid #[allow(dead_code)] anywhere in src/
+      - id: forbid-dead-code
+        name: forbid #[allow(dead_code)] in src/
+        entry: '#\[allow\(dead_code\)\]'
+        language: pygrep
+        types: [rust]
+        files: ^src/
+
+      # Forbid #[cfg(test)] mod tests inside src/commands/
+      - id: forbid-command-unit-tests
+        name: forbid #[cfg(test)] in src/commands/
+        entry: '#\[cfg\(test\)\]'
+        language: pygrep
+        types: [rust]
+        files: ^src/commands/
+
+      # Enforce max source file length (600 lines)
+      - id: max-file-length
+        name: enforce max file length (600 lines)
+        entry: scripts/max-file-length.sh
+        language: script
+        pass_filenames: false
+
+  # ──────────────────────────────────────────────
+  # Pre-push: full CI verification
+  # ──────────────────────────────────────────────
+  - repo: local
+    hooks:
+      - id: cargo-build
+        name: cargo build
+        entry: cargo build
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+        verbose: true
+
+      - id: cargo-fmt-check
+        name: cargo fmt --check
+        entry: cargo fmt --check
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+        verbose: true
+
+      - id: cargo-clippy
+        name: cargo clippy
+        entry: cargo clippy -- -D warnings
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+        verbose: true
+
+      - id: cargo-test
+        name: cargo test
+        entry: cargo test
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+        verbose: true
+
+      - id: cargo-doc
+        name: cargo doc with warnings-as-errors
+        entry: env RUSTDOCFLAGS="-D warnings" cargo doc --document-private-items
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+        verbose: true
+
+      - id: doc-coverage
+        name: doc coverage (100% required)
+        entry: python3 scripts/doc-coverage.py --min 100
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+        verbose: true
