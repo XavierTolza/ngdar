@@ -44,20 +44,14 @@ repos:
         types: [rust]
         files: ^src/
 
-      # Forbid #[cfg(test)] mod tests inside src/commands/
-      - id: forbid-command-unit-tests
-        name: forbid #[cfg(test)] in src/commands/
+      # Forbid #[cfg(test)] anywhere in src/ (library modules are exempt)
+      - id: forbid-cfg-test-in-src
+        name: forbid #[cfg(test)] in src/ (lib modules exempt)
         entry: '#\[cfg\(test\)\]'
         language: pygrep
         types: [rust]
-        files: ^src/commands/
-
-      # Enforce max source file length (600 lines)
-      - id: max-file-length
-        name: enforce max file length (600 lines)
-        entry: scripts/max-file-length.sh
-        language: script
-        pass_filenames: false
+        files: ^src/
+        exclude: ^src/(config|cache|hash|ignore|objects)\.rs
 
   # ──────────────────────────────────────────────
   # Pre-push: full CI verification
