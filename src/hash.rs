@@ -28,12 +28,6 @@ pub fn hash_file(path: &std::path::Path) -> Result<Hash, crate::error::NgdarErro
     Ok(hasher.finalize())
 }
 
-#[cfg(test)]
-/// Compute the BLAKE3 hash of a byte slice.
-pub(crate) fn hash_bytes(data: &[u8]) -> Hash {
-    blake3::hash(data)
-}
-
 /// Compute the BLAKE3 hash of a string.
 pub fn hash_string(data: &str) -> Hash {
     blake3::hash(data.as_bytes())
@@ -42,37 +36,4 @@ pub fn hash_string(data: &str) -> Hash {
 /// Convert a BLAKE3 hash to a hex string.
 pub fn hash_to_hex(hash: &Hash) -> String {
     hash.to_hex().to_string()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::io::Write;
-
-    #[test]
-    fn test_hash_bytes_consistency() {
-        let data = b"hello world";
-        let h1 = hash_bytes(data);
-        let h2 = hash_bytes(data);
-        assert_eq!(h1, h2);
-    }
-
-    #[test]
-    fn test_hash_file() {
-        let mut f = tempfile::NamedTempFile::new().unwrap();
-        f.write_all(b"test content").unwrap();
-        let h = hash_file(f.path()).unwrap();
-        assert_eq!(h.to_hex().len(), 64);
-    }
-
-    #[test]
-    fn test_hash_different_files() {
-        let mut f1 = tempfile::NamedTempFile::new().unwrap();
-        f1.write_all(b"content a").unwrap();
-        let mut f2 = tempfile::NamedTempFile::new().unwrap();
-        f2.write_all(b"content b").unwrap();
-        let h1 = hash_file(f1.path()).unwrap();
-        let h2 = hash_file(f2.path()).unwrap();
-        assert_ne!(h1, h2);
-    }
 }

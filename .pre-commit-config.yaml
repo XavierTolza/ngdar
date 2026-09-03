@@ -44,14 +44,13 @@ repos:
         types: [rust]
         files: ^src/
 
-      # Forbid #[cfg(test)] anywhere in src/ (library modules are exempt)
+      # Forbid #[cfg(test)] anywhere in src/ (all tests must be in tests/)
       - id: forbid-cfg-test-in-src
-        name: forbid #[cfg(test)] in src/ (lib modules exempt)
+        name: forbid #[cfg(test)] in src/
         entry: '#\[cfg\(test\)\]'
         language: pygrep
         types: [rust]
         files: ^src/
-        exclude: ^src/(config|cache|hash|ignore|objects)\.rs
 
   # ──────────────────────────────────────────────
   # Pre-push: full CI verification
