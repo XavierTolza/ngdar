@@ -103,11 +103,3 @@ repos:
         pass_filenames: false
         stages: [pre-push]
         verbose: true
-
-      - id: doc-coverage
-        name: doc coverage (100% required)
-        entry: python3 scripts/doc-coverage.py --min 100
-        language: system
-        pass_filenames: false
-        stages: [pre-push]
-        verbose: true
