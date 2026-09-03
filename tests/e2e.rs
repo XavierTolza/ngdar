@@ -1,5 +1,7 @@
 /// Full end-to-end workflow: init -> add -> pack -> verify -> second session.
 mod common;
+#[path = "common/setup.rs"]
+mod setup;
 
 use common::run_ngdar;
 use std::path::Path;
@@ -91,7 +93,7 @@ fn assert_meta_has_volume_id(extract_dir: &Path, vol_id: &str) {
 
 #[test]
 fn test_full_workflow() {
-    let (_dir, root) = common::setup_repo();
+    let (_dir, root) = setup::setup_repo();
 
     // --- Session 1: add files, pack, verify ---
     let out =
@@ -190,4 +192,17 @@ fn test_log_shows_files() {
         "log should list hello.txt: {out}"
     );
     assert!(out.contains("DVD-LOG"), "log should show volume_id: {out}");
+}
+
+#[test]
+fn test_log_no_commits() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let root = dir.path().to_path_buf();
+
+    common::run_ngdar(&root, &["init"]).unwrap();
+    let out = common::run_ngdar(&root, &["log"]).unwrap();
+    assert!(
+        out.contains("no commits"),
+        "log with no commits should show message: {out}"
+    );
 }

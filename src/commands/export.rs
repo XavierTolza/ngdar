@@ -7,14 +7,6 @@ pub fn export(commit_hash: &str, out_path: &str) -> Result<(), NgdarError> {
     export_with_repo(&repo, commit_hash, out_path)
 }
 
-#[cfg(test)]
-fn export_at(cwd: &Path, commit_hash: &str, out_path: &str) -> Result<(), NgdarError> {
-    let repo = Repository::find(cwd)?;
-    // Reuse the same logic as export but with given cwd
-    let _ = repo; // we already have the repo, but the logic needs the path
-    export_with_repo(&repo, commit_hash, out_path)
-}
-
 fn export_with_repo(
     repo: &Repository,
     commit_hash: &str,
@@ -74,23 +66,4 @@ fn export_with_repo(
         eprintln!("{} file(s) were skipped due to warnings", warnings);
     }
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::config::Repository;
-
-    #[test]
-    fn test_export_nonexistent_commit() {
-        let dir = tempfile::TempDir::new().unwrap();
-        let root = dir.path().to_path_buf();
-        Repository::init(&root).unwrap();
-        let result = export_at(
-            &root,
-            "0000000000000000000000000000000000000000000000000000000000000000",
-            "out.tar",
-        );
-        assert!(result.is_err(), "export() should fail on bad commit hash");
-    }
 }

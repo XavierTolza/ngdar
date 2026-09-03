@@ -1,9 +1,11 @@
 /// Tests for `ngdar add` — staging files.
 mod common;
+#[path = "common/setup.rs"]
+mod setup;
 
 #[test]
 fn add_single_files_shown_in_output() {
-    let (_dir, root) = common::setup_repo();
+    let (_dir, root) = setup::setup_repo();
 
     let out = common::run_ngdar(&root, &["add", "README.txt"]).unwrap();
     assert!(out.contains("added: README.txt"));
@@ -16,7 +18,7 @@ fn add_single_files_shown_in_output() {
 
 #[test]
 fn add_multiple_files_count() {
-    let (_dir, root) = common::setup_repo();
+    let (_dir, root) = setup::setup_repo();
 
     let out =
         common::run_ngdar(&root, &["add", "README.txt", "docs/note.txt", "large.bin"]).unwrap();
@@ -28,7 +30,7 @@ fn add_multiple_files_count() {
 
 #[test]
 fn add_directory_recursively_adds_all_files() {
-    let (_dir, root) = common::setup_repo();
+    let (_dir, root) = setup::setup_repo();
     // Add a second file inside docs/
     std::fs::write(root.join("docs/readme.txt"), "docs readme").unwrap();
 
@@ -40,7 +42,7 @@ fn add_directory_recursively_adds_all_files() {
 
 #[test]
 fn add_nonexistent_file_errors() {
-    let (_dir, root) = common::setup_repo();
+    let (_dir, root) = setup::setup_repo();
 
     let binary = assert_cmd::cargo::cargo_bin("ngdar");
     let output = std::process::Command::new(binary)
@@ -62,7 +64,7 @@ fn add_nonexistent_file_errors() {
 
 #[test]
 fn add_already_staged_file_shows_message() {
-    let (_dir, root) = common::setup_repo();
+    let (_dir, root) = setup::setup_repo();
 
     common::run_ngdar(&root, &["add", "README.txt"]).unwrap();
     let out = common::run_ngdar(&root, &["add", "README.txt"]).unwrap();

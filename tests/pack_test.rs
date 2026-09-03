@@ -1,5 +1,7 @@
 /// Tests for `ngdar pack` — archive creation and TAR contents.
 mod common;
+#[path = "common/setup.rs"]
+mod setup;
 
 use std::path::Path;
 use std::process::Command;
@@ -43,14 +45,14 @@ fn extract_tar(root: &Path, tar_path: &Path, name: &str) -> std::path::PathBuf {
 
 #[test]
 fn pack_creates_tar_file() {
-    let (_dir, root) = common::setup_repo();
+    let (_dir, root) = setup::setup_repo();
     let tar_path = pack_all(&root, "DVD-001");
     assert!(tar_path.exists(), "tar file should exist");
 }
 
 #[test]
 fn pack_contains_metadata_and_data() {
-    let (_dir, root) = common::setup_repo();
+    let (_dir, root) = setup::setup_repo();
     let tar_path = pack_all(&root, "DVD-001");
     let extract_dir = extract_tar(&root, &tar_path, "extract");
 
@@ -73,7 +75,7 @@ fn pack_contains_metadata_and_data() {
 
 #[test]
 fn pack_data_files_have_correct_contents() {
-    let (_dir, root) = common::setup_repo();
+    let (_dir, root) = setup::setup_repo();
     let tar_path = pack_all(&root, "DVD-001");
     let extract_dir = extract_tar(&root, &tar_path, "extract");
 
@@ -88,7 +90,7 @@ fn pack_data_files_have_correct_contents() {
 
 #[test]
 fn pack_objects_are_plain_text_meta_with_volume_id() {
-    let (_dir, root) = common::setup_repo();
+    let (_dir, root) = setup::setup_repo();
     let tar_path = pack_all(&root, "DVD-001");
     let extract_dir = extract_tar(&root, &tar_path, "extract");
 
@@ -109,7 +111,7 @@ fn pack_objects_are_plain_text_meta_with_volume_id() {
 
 #[test]
 fn pack_error_with_empty_index() {
-    let (_dir, root) = common::setup_repo();
+    let (_dir, root) = setup::setup_repo();
 
     let tar_path = root.join("session_DVD-001.tar");
     let result = common::run_ngdar(
