@@ -1,9 +1,11 @@
 /// Tests for `ngdar status` — staged, unstaged, untracked.
 mod common;
+#[path = "common/setup.rs"]
+mod setup;
 
 #[test]
 fn status_after_init_shows_nothing_staged() {
-    let (_dir, root) = common::setup_repo();
+    let (_dir, root) = setup::setup_repo();
 
     let out = common::run_ngdar(&root, &["status"]).unwrap();
     assert!(
@@ -14,7 +16,7 @@ fn status_after_init_shows_nothing_staged() {
 
 #[test]
 fn status_shows_staged_files() {
-    let (_dir, root) = common::setup_repo();
+    let (_dir, root) = setup::setup_repo();
 
     common::run_ngdar(&root, &["add", "README.txt"]).unwrap();
     common::run_ngdar(&root, &["add", "docs/note.txt"]).unwrap();
@@ -49,7 +51,7 @@ fn status_shows_staged_files() {
 
 #[test]
 fn status_shows_nothing_staged_after_pack() {
-    let (_dir, root) = common::setup_repo();
+    let (_dir, root) = setup::setup_repo();
 
     common::run_ngdar(&root, &["add", "README.txt"]).unwrap();
     let tar_path = root.join("s.tar");
@@ -76,7 +78,7 @@ fn status_shows_nothing_staged_after_pack() {
 
 #[test]
 fn status_shows_no_unstaged_after_pack() {
-    let (_dir, root) = common::setup_repo();
+    let (_dir, root) = setup::setup_repo();
 
     common::run_ngdar(&root, &["add", "README.txt"]).unwrap();
     common::run_ngdar(&root, &["add", "docs/note.txt"]).unwrap();

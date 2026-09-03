@@ -64,6 +64,8 @@ pub struct Meta {
     pub binary_hash: String,
     /// Volume identifier (e.g., "DVD-001", "ARCHIVE-2026-08").
     pub volume_id: String,
+    /// Original file path relative to repository root.
+    pub path: String,
 }
 
 impl Meta {
@@ -74,6 +76,7 @@ impl Meta {
         permissions: u32,
         binary_hash: String,
         volume_id: String,
+        path: String,
     ) -> Self {
         Meta {
             size,
@@ -81,6 +84,7 @@ impl Meta {
             permissions,
             binary_hash,
             volume_id,
+            path,
         }
     }
 
@@ -94,6 +98,7 @@ impl Meta {
     /// permissions <octal>
     /// binary_hash <blake3_hex>
     /// volume_id <id>
+    /// path <original_path>
     /// ```
     pub fn to_text(&self) -> String {
         format!(
@@ -102,8 +107,9 @@ impl Meta {
              mtime {}\n\
              permissions {:o}\n\
              binary_hash {}\n\
-             volume_id {}\n",
-            self.size, self.mtime, self.permissions, self.binary_hash, self.volume_id
+             volume_id {}\n\
+             path {}\n",
+            self.size, self.mtime, self.permissions, self.binary_hash, self.volume_id, self.path
         )
     }
 
@@ -114,6 +120,7 @@ impl Meta {
         let mut permissions = None;
         let mut binary_hash = None;
         let mut volume_id = None;
+        let mut path = None;
 
         for line in text.lines() {
             let line = line.trim();
@@ -144,6 +151,7 @@ impl Meta {
                     }
                     "binary_hash" => binary_hash = Some(value.to_string()),
                     "volume_id" => volume_id = Some(value.to_string()),
+                    "path" => path = Some(value.to_string()),
                     _ => {}
                 }
             }
@@ -157,6 +165,7 @@ impl Meta {
             binary_hash: binary_hash
                 .ok_or_else(|| NgdarError::Parse("Missing binary_hash".into()))?,
             volume_id: volume_id.ok_or_else(|| NgdarError::Parse("Missing volume_id".into()))?,
+            path: path.unwrap_or_default(),
         })
     }
 }
@@ -484,6 +493,7 @@ mod tests {
             0o644,
             "a1b2c3d4e5f6".into(),
             "DVD-001".into(),
+            "docs/report.pdf".into(),
         );
         let text = meta.to_text();
         let parsed = Meta::from_text(&text).unwrap();
@@ -492,6 +502,7 @@ mod tests {
         assert_eq!(parsed.permissions, 0o644);
         assert_eq!(parsed.binary_hash, "a1b2c3d4e5f6");
         assert_eq!(parsed.volume_id, "DVD-001");
+        assert_eq!(parsed.path, "docs/report.pdf");
     }
 
     #[test]
@@ -544,8 +555,7 @@ mod tests {
     fn test_write_read_object() {
         let dir = tempfile::TempDir::new().unwrap();
         let objects_dir = dir.path().join("objects");
-        let content =
-            "type meta\nsize 100\nmtime 1000\npermissions 644\nbinary_hash abc\nvolume_id DVD\n";
+        let content = "type meta\nsize 100\nmtime 1000\npermissions 644\nbinary_hash abc\nvolume_id DVD\npath file.txt\n";
         let hash = write_object(&objects_dir, content).unwrap();
         assert_eq!(hash.len(), 64);
         let read = read_object(&objects_dir, &hash).unwrap();

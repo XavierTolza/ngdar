@@ -1,5 +1,7 @@
 /// Full end-to-end workflow: init -> add -> pack -> verify -> second session.
 mod common;
+#[path = "common/setup.rs"]
+mod setup;
 
 use common::run_ngdar;
 use std::path::Path;
@@ -50,7 +52,7 @@ fn extract(root: &Path, tar_path: &Path, dir_name: &str) -> std::path::PathBuf {
     let extract_dir = root.join(dir_name);
     std::fs::create_dir_all(&extract_dir).unwrap();
     let output = Command::new("tar")
-        .args(&["-xf", tar_path.to_str().unwrap()])
+        .args(["-xf", tar_path.to_str().unwrap()])
         .current_dir(&extract_dir)
         .output()
         .unwrap();
@@ -91,7 +93,7 @@ fn assert_meta_has_volume_id(extract_dir: &Path, vol_id: &str) {
 
 #[test]
 fn test_full_workflow() {
-    let (_dir, root) = common::setup_repo();
+    let (_dir, root) = setup::setup_repo();
 
     // --- Session 1: add files, pack, verify ---
     let out =
@@ -146,48 +148,61 @@ fn test_full_workflow() {
     assert_meta_has_volume_id(&ext2, "DVD-001");
 }
 
-/// End-to-end test for `ngdar archive-content <archive>`.
-///
-/// Creates a full workflow (init -> add -> pack), then inspects the
-/// resulting archive with `archive-content` and verifies the output
-/// contains expected entries.
+/// End-to-end test for `ngdar log` (list files in commit).
 #[test]
-fn test_archive_content_e2e() {
+fn test_log_shows_files() {
     let dir = tempfile::TempDir::new().unwrap();
     let root = dir.path().to_path_buf();
 
-    // Create a test file and run the full workflow
-    std::fs::write(root.join("hello.txt"), "archive content test").unwrap();
+    std::fs::write(root.join("hello.txt"), "content for log test").unwrap();
     run_ngdar(&root, &["init"]).unwrap();
     run_ngdar(&root, &["add", "hello.txt"]).unwrap();
 
     let tar_path = root.join("test_archive.tar");
-    run_ngdar(
+    let out = run_ngdar(
         &root,
         &[
             "pack",
             "--vol-id",
-            "DVD-TEST-ARC",
+            "DVD-LOG",
             "--out",
             tar_path.to_str().unwrap(),
             "-m",
-            "Test archive for content inspection",
+            "Test log command",
         ],
     )
     .unwrap();
 
-    // Now inspect the archive
-    let out = run_ngdar(&root, &["archive-content", tar_path.to_str().unwrap()]).unwrap();
+    // Extract commit hash from pack output
+    let commit_line = out.lines().find(|l| l.starts_with("Commit:")).unwrap();
+    let commit_hash = commit_line
+        .strip_prefix("Commit: ")
+        .unwrap()
+        .trim()
+        .to_string();
+
+    // Now run log with commit hash
+    let out = run_ngdar(&root, &["log", &commit_hash]).unwrap();
     assert!(
-        out.contains("Archive Contents"),
-        "output should show archive header"
+        out.contains("Commit:"),
+        "log output should show commit: {out}"
     );
     assert!(
         out.contains("hello.txt"),
-        "output should list the data file"
+        "log should list hello.txt: {out}"
     );
+    assert!(out.contains("DVD-LOG"), "log should show volume_id: {out}");
+}
+
+#[test]
+fn test_log_no_commits() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let root = dir.path().to_path_buf();
+
+    common::run_ngdar(&root, &["init"]).unwrap();
+    let out = common::run_ngdar(&root, &["log"]).unwrap();
     assert!(
-        out.contains(".ngdar/"),
-        "output should show .ngdar metadata"
+        out.contains("no commits"),
+        "log with no commits should show message: {out}"
     );
 }
