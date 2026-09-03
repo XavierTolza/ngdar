@@ -1,6 +1,7 @@
 use super::*;
 use crate::objects::{self, Commit};
 
+/// Show staged, unstaged, and untracked file status.
 pub fn status() -> Result<(), NgdarError> {
     let cwd = std::env::current_dir()?;
     let repo = Repository::find(&cwd)?;

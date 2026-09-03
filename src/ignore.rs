@@ -1,7 +1,7 @@
 //! `.ngdarignore` file pattern matching and untracked file discovery.
 //!
-//! Provides [`IgnoreRules`] for filtering out ignored files and
-//! [`list_untracked`] for finding files not yet tracked in the repository.
+//! Provides IgnoreRules for filtering out ignored files and
+//! list_untracked for finding files not yet tracked in the repository.
 
 use crate::error::NgdarError;
 use std::path::Path;

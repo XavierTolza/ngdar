@@ -1,6 +1,7 @@
 use super::*;
 use crate::objects::{self, Commit, Meta};
 
+/// Show commit history. If `commit_hash` is given, start from that commit.
 pub fn log(commit_hash: Option<&str>) -> Result<(), NgdarError> {
     let cwd = std::env::current_dir()?;
     let repo = Repository::find(&cwd)?;

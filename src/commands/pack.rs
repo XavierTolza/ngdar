@@ -1,6 +1,7 @@
 use super::*;
 use crate::objects::{build_tree_from_index, write_object, Commit, Meta};
 
+/// Create a TAR archive with object metadata and incremental file data.
 pub fn pack(vol_id: &str, out: &str, message: &str) -> Result<(), NgdarError> {
     let cwd = std::env::current_dir()?;
     let repo = Repository::find(&cwd)?;

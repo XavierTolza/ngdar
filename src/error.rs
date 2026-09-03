@@ -1,6 +1,6 @@
 //! Error types for NGDAR operations.
 //!
-//! Defines [`NgdarError`], a unified error enum that wraps I/O, parsing,
+//! Defines NgdarError, a unified error enum that wraps I/O, parsing,
 //! filesystem-walk, and domain-specific errors with automatic conversions.
 
 use std::fmt;
