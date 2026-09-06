@@ -99,14 +99,16 @@ pub fn pack(vol_id: &str, out: &str, message: &str) -> Result<(), NgdarError> {
 
     println!("Commit: {}", commit_hash);
 
-    // Phase 4: Build TAR archive
-    build_tar_archive(&repo, &index, out, &commit_hash, vol_id)?;
-
-    // Record committed files for future add dedup
+    // Record committed files before building the archive so that
+    // .ngdar/committed is included in the TAR
     repo.add_committed(&committed_entries)?;
 
-    // Phase 5: Clear index
+    // Clear index before building the archive so that .ngdar/index
+    // inside the TAR reflects the post-commit state (empty staging area)
     repo.clear_index()?;
+
+    // Phase 4: Build TAR archive
+    build_tar_archive(&repo, &index, out, &commit_hash, vol_id)?;
 
     println!("Created archive: {}", out);
     println!("Done. Index has been cleared.");
