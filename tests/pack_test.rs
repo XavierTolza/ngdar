@@ -4,7 +4,6 @@ mod common;
 mod setup;
 
 use std::path::Path;
-use std::process::Command;
 
 /// Helper: add all standard files and pack into a tar, returning the tar path.
 fn pack_all(root: &Path, vol_id: &str) -> std::path::PathBuf {
@@ -30,19 +29,6 @@ fn pack_all(root: &Path, vol_id: &str) -> std::path::PathBuf {
     tar_path
 }
 
-/// Helper: extract a tar archive into a subdirectory and return the path.
-fn extract_tar(root: &Path, tar_path: &Path, name: &str) -> std::path::PathBuf {
-    let extract_dir = root.join(name);
-    std::fs::create_dir_all(&extract_dir).unwrap();
-    let output = Command::new("tar")
-        .args(["-xf", tar_path.to_str().unwrap()])
-        .current_dir(&extract_dir)
-        .output()
-        .unwrap();
-    assert!(output.status.success(), "tar extraction failed");
-    extract_dir
-}
-
 #[test]
 fn pack_creates_tar_file() {
     let (_dir, root) = setup::setup_repo();
@@ -54,7 +40,7 @@ fn pack_creates_tar_file() {
 fn pack_contains_metadata_and_data() {
     let (_dir, root) = setup::setup_repo();
     let tar_path = pack_all(&root, "DVD-001");
-    let extract_dir = extract_tar(&root, &tar_path, "extract");
+    let extract_dir = common::extract_tar(&root, &tar_path, "extract");
 
     assert!(
         extract_dir.join(".ngdar").is_dir(),
@@ -77,7 +63,7 @@ fn pack_contains_metadata_and_data() {
 fn pack_data_files_have_correct_contents() {
     let (_dir, root) = setup::setup_repo();
     let tar_path = pack_all(&root, "DVD-001");
-    let extract_dir = extract_tar(&root, &tar_path, "extract");
+    let extract_dir = common::extract_tar(&root, &tar_path, "extract");
 
     let readme = std::fs::read_to_string(extract_dir.join("README.txt")).unwrap();
     assert_eq!(readme, "ngdar test project");
@@ -92,7 +78,7 @@ fn pack_data_files_have_correct_contents() {
 fn pack_objects_are_plain_text_meta_with_volume_id() {
     let (_dir, root) = setup::setup_repo();
     let tar_path = pack_all(&root, "DVD-001");
-    let extract_dir = extract_tar(&root, &tar_path, "extract");
+    let extract_dir = common::extract_tar(&root, &tar_path, "extract");
 
     let objects_dir = extract_dir.join(".ngdar/objects");
     let mut has_meta = false;

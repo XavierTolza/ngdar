@@ -3,29 +3,11 @@ mod common;
 #[path = "common/setup.rs"]
 mod setup;
 
-use common::run_ngdar;
+use common::{
+    assert_data_files, assert_meta_has_volume_id, assert_no_data_files, assert_no_unstaged,
+    assert_nothing_staged, assert_staged, extract_tar, run_ngdar,
+};
 use std::path::Path;
-use std::process::Command;
-
-/// Assert that status output contains the given file in the staged list.
-fn assert_staged(root: &Path, files: &[&str]) {
-    let out = common::run_ngdar(root, &["status"]).unwrap();
-    for f in files {
-        assert!(out.contains(f), "'{f}' should appear in staged: {out}");
-    }
-}
-
-/// Assert that status shows "(nothing staged)".
-fn assert_nothing_staged(root: &Path) {
-    let out = common::run_ngdar(root, &["status"]).unwrap();
-    assert!(out.contains("(nothing staged)"), "nothing staged: {out}");
-}
-
-/// Assert that status shows "(no unstaged changes)".
-fn assert_no_unstaged(root: &Path) {
-    let out = common::run_ngdar(root, &["status"]).unwrap();
-    assert!(out.contains("(no unstaged changes)"), "no unstaged: {out}");
-}
 
 /// Pack staged files and return the tar path.
 fn pack(root: &Path, vol_id: &str, out_name: &str, msg: &str) -> std::path::PathBuf {
@@ -45,50 +27,6 @@ fn pack(root: &Path, vol_id: &str, out_name: &str, msg: &str) -> std::path::Path
     .unwrap();
     assert!(out.contains("Created archive"), "pack output: {out}");
     tar_path
-}
-
-/// Extract a tar archive into a subdirectory and return the path.
-fn extract(root: &Path, tar_path: &Path, dir_name: &str) -> std::path::PathBuf {
-    let extract_dir = root.join(dir_name);
-    std::fs::create_dir_all(&extract_dir).unwrap();
-    let output = Command::new("tar")
-        .args(["-xf", tar_path.to_str().unwrap()])
-        .current_dir(&extract_dir)
-        .output()
-        .unwrap();
-    assert!(output.status.success(), "tar extraction failed");
-    extract_dir
-}
-
-/// Assert that an extracted archive contains data files.
-fn assert_data_files(extract_dir: &Path, files: &[&str]) {
-    for f in files {
-        assert!(extract_dir.join(f).exists(), "{f} missing");
-    }
-}
-
-/// Assert that an extracted archive does NOT contain data files.
-fn assert_no_data_files(extract_dir: &Path, files: &[&str]) {
-    for f in files {
-        assert!(!extract_dir.join(f).exists(), "{f} should NOT be present");
-    }
-}
-
-/// Assert that Meta objects with the given volume_id exist in the archive.
-fn assert_meta_has_volume_id(extract_dir: &Path, vol_id: &str) {
-    let objects_dir = extract_dir.join(".ngdar/objects");
-    let mut found = false;
-    for entry in walkdir::WalkDir::new(&objects_dir) {
-        let entry = entry.unwrap();
-        if entry.file_type().is_file() {
-            if let Ok(content) = std::fs::read_to_string(entry.path()) {
-                if content.contains(&format!("volume_id {}", vol_id)) {
-                    found = true;
-                }
-            }
-        }
-    }
-    assert!(found, "No Meta with volume_id {vol_id} found");
 }
 
 #[test]
@@ -112,7 +50,7 @@ fn test_full_workflow() {
     );
     assert_nothing_staged(&root);
 
-    let ext1 = extract(&root, &tar1, "extract");
+    let ext1 = extract_tar(&root, &tar1, "extract");
     assert!(ext1.join(".ngdar").is_dir());
     assert_data_files(&ext1, &["README.txt", "docs/note.txt", "large.bin"]);
     assert_eq!(
@@ -137,7 +75,7 @@ fn test_full_workflow() {
     );
     assert_nothing_staged(&root);
 
-    let ext2 = extract(&root, &tar2, "extract2");
+    let ext2 = extract_tar(&root, &tar2, "extract2");
 
     // data/ must contain only the new file (incremental)
     assert_data_files(&ext2, &["new_file.txt"]);
