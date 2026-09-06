@@ -20,6 +20,7 @@ fn db_export_at(cwd: &Path, csv_path: &str) -> Result<(), NgdarError> {
         "filepath",
         "file_hash",
         "file_size",
+        "volume_id",
     ])
     .map_err(|e| NgdarError::Other(format!("CSV write error: {}", e)))?;
 
@@ -62,6 +63,7 @@ fn db_export_at(cwd: &Path, csv_path: &str) -> Result<(), NgdarError> {
                     filepath,
                     &meta.binary_hash,
                     &file_size,
+                    &meta.volume_id,
                 ])
                 .map_err(|e| NgdarError::Other(format!("CSV write error: {}", e)))?;
                 count += 1;
