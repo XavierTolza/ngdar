@@ -1,4 +1,5 @@
 use crate::error::NgdarError;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 /// The `.ngdar` directory structure within a repository.
@@ -13,6 +14,8 @@ pub const INDEX_FILE: &str = "index";
 pub const REPO_ID_FILE: &str = "repository_id";
 /// The ignore file name (`.ngdarignore`) at the repository root.
 pub const NGDAR_IGNORE_FILE: &str = ".ngdarignore";
+/// The committed tracking file (`.ngdar/committed`), mapping `binary_hash path`.
+pub const COMMITTED_FILE: &str = "committed";
 
 /// Repository configuration, read from the `.ngdar/` directory.
 pub struct Repository {
@@ -26,6 +29,8 @@ pub struct Repository {
     pub head_path: PathBuf,
     /// Absolute path to `.ngdar/index` file.
     pub index_path: PathBuf,
+    /// Absolute path to `.ngdar/committed` file.
+    pub committed_path: PathBuf,
     /// Unique repository identifier (UUID v4).
     pub repo_id: String,
 }
@@ -61,6 +66,7 @@ impl Repository {
             objects_path: ngdar_path.join(OBJECTS_DIR),
             head_path: ngdar_path.join(HEAD_FILE),
             index_path: ngdar_path.join(INDEX_FILE),
+            committed_path: ngdar_path.join(COMMITTED_FILE),
             ngdar_path,
             repo_id,
         })
@@ -93,6 +99,7 @@ impl Repository {
             objects_path,
             head_path: ngdar_path.join(HEAD_FILE),
             index_path: ngdar_path.join(INDEX_FILE),
+            committed_path: ngdar_path.join(COMMITTED_FILE),
             ngdar_path,
             repo_id,
         })
@@ -150,6 +157,39 @@ impl Repository {
     /// Clear the index.
     pub fn clear_index(&self) -> Result<(), NgdarError> {
         std::fs::write(&self.index_path, "")?;
+        Ok(())
+    }
+
+    /// Read the committed file — returns `Vec<(binary_hash, path)>`.
+    pub fn read_committed(&self) -> Result<Vec<(String, String)>, NgdarError> {
+        if !self.committed_path.exists() {
+            return Ok(Vec::new());
+        }
+        let content = std::fs::read_to_string(&self.committed_path)?;
+        Ok(content
+            .lines()
+            .filter_map(|l| {
+                let l = l.trim();
+                if l.is_empty() {
+                    return None;
+                }
+                let (hash, path) = l.split_once(' ')?;
+                Some((hash.to_string(), path.to_string()))
+            })
+            .collect())
+    }
+
+    /// Append entries to the committed file (one `hash path` per line).
+    pub fn add_committed(&self, entries: &[(String, String)]) -> Result<(), NgdarError> {
+        let mut content = String::new();
+        for (hash, path) in entries {
+            content.push_str(&format!("{} {}\n", hash, path));
+        }
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.committed_path)?
+            .write_all(content.as_bytes())?;
         Ok(())
     }
 }

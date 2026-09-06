@@ -8,8 +8,9 @@ pub fn add(paths: &[String]) -> Result<(), NgdarError> {
     let cache_path = repo.cache_path();
     let mut cache = CacheStore::load(&cache_path)?;
 
-    // Read existing index
+    // Read existing index and committed tracking
     let mut index = repo.read_index()?;
+    let committed = repo.read_committed()?;
     let mut new_count: usize = 0;
 
     for path_str in paths {
@@ -56,12 +57,12 @@ pub fn add(paths: &[String]) -> Result<(), NgdarError> {
                 if ignore_rules.is_ignored(&file_rel) {
                     continue;
                 }
-                if add_file(&repo, &mut cache, &file_rel, &mut index)? {
+                if add_file(&repo, &mut cache, &committed, &file_rel, &mut index)? {
                     new_count += 1;
                 }
             }
         } else if path.is_file() {
-            if add_file(&repo, &mut cache, rel_str, &mut index)? {
+            if add_file(&repo, &mut cache, &committed, rel_str, &mut index)? {
                 new_count += 1;
             }
         } else {
@@ -86,6 +87,7 @@ pub fn add(paths: &[String]) -> Result<(), NgdarError> {
 fn add_file(
     repo: &Repository,
     cache: &mut CacheStore,
+    committed: &[(String, String)],
     rel_str: &str,
     index: &mut Vec<String>,
 ) -> Result<bool, NgdarError> {
@@ -94,8 +96,22 @@ fn add_file(
     let size = metadata.len();
     let mtime = get_mtime(&metadata);
 
-    // Check cache
-    let _hash_str = if let Some(h) = cache.lookup(size, mtime, rel_str) {
+    // Already staged — no need to check committed
+    if index.contains(&rel_str.to_string()) {
+        println!("   already staged: {}", rel_str);
+        return Ok(false);
+    }
+
+    // Check if this file was already committed with an unchanged hash.
+    // For committed files we always compute fresh to be robust against
+    // the rare case where size/mtime collide for different content.
+    let hash_str = if is_committed(committed, rel_str) {
+        let hash = hash_file(&full_path)?;
+        let hex = hash_to_hex(&hash);
+        // Seed cache if it was missing or stale
+        cache.insert(size, mtime, hex.clone(), rel_str.to_string());
+        hex
+    } else if let Some(h) = cache.lookup(size, mtime, rel_str) {
         h.to_string()
     } else {
         let hash = hash_file(&full_path)?;
@@ -104,13 +120,19 @@ fn add_file(
         hex
     };
 
-    // Add to index if not already there
-    if !index.contains(&rel_str.to_string()) {
-        index.push(rel_str.to_string());
-        println!("   added: {}", rel_str);
-        Ok(true)
-    } else {
-        println!("   already staged: {}", rel_str);
-        Ok(false)
+    if committed
+        .iter()
+        .any(|(h, p)| p == rel_str && *h == hash_str)
+    {
+        println!("   already committed (unchanged): {}", rel_str);
+        return Ok(false);
     }
+
+    index.push(rel_str.to_string());
+    println!("   added: {}", rel_str);
+    Ok(true)
+}
+
+fn is_committed(committed: &[(String, String)], rel_str: &str) -> bool {
+    committed.iter().any(|(_, p)| p == rel_str)
 }

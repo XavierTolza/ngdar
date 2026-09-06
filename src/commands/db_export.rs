@@ -1,5 +1,5 @@
 use super::*;
-use crate::objects::Meta;
+use crate::objects::{self, Commit, Meta};
 
 /// Export the object database as a CSV file.
 pub fn db_export(csv_path: &str) -> Result<(), NgdarError> {
@@ -13,143 +13,68 @@ fn db_export_at(cwd: &Path, csv_path: &str) -> Result<(), NgdarError> {
     let mut wtr = csv::Writer::from_path(csv_path)
         .map_err(|e| NgdarError::Other(format!("Cannot create CSV '{}': {}", csv_path, e)))?;
 
-    // Write CSV header
+    // Write CSV header — like a `git log` export
     wtr.write_record([
-        "type",
-        "hash",
-        "size",
-        "mtime",
-        "permissions",
-        "binary_hash",
-        "volume_id",
-        "path",
-        "tree_hash",
-        "parent_hash",
-        "timestamp",
-        "message",
-        "entry_count",
+        "commit_date",
+        "commit_hash",
+        "commit_msg",
+        "filepath",
+        "file_hash",
+        "file_size",
     ])
     .map_err(|e| NgdarError::Other(format!("CSV write error: {}", e)))?;
 
-    // Walk the objects directory
-    let objects_dir = &repo.objects_path;
-    if !objects_dir.exists() {
-        return Err(NgdarError::Other("No objects directory found".into()));
+    let head = repo.read_head()?;
+    let mut current = head;
+
+    if current.is_none() {
+        println!("(no commits yet)");
+        wtr.flush()
+            .map_err(|e| NgdarError::Other(format!("CSV flush error: {}", e)))?;
+        return Ok(());
     }
 
     let mut count = 0u64;
-    for entry in walkdir::WalkDir::new(objects_dir) {
-        let entry = entry?;
-        if !entry.file_type().is_file() {
-            continue;
-        }
 
-        // Reconstruct the full hash from the sharded directory structure
-        // objects/ab/cdef... -> abcdef...
-        let rel_path = entry
-            .path()
-            .strip_prefix(objects_dir)
-            .map_err(|_| NgdarError::Other("Path error".into()))?;
-        let hash_str = rel_path.to_str().unwrap_or("").replace('/', "");
+    while let Some(hash) = current {
+        let commit_text = objects::read_object(&repo.objects_path, &hash)?;
+        let commit = Commit::from_text(&commit_text)?;
 
-        let content = std::fs::read_to_string(entry.path())?;
-        let content = content.trim();
+        let commit_date = chrono::DateTime::from_timestamp(commit.timestamp, 0)
+            .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+            .unwrap_or_else(|| commit.timestamp.to_string());
 
-        if content.starts_with("type meta") {
-            // Meta object
-            if let Ok(meta) = Meta::from_text(content) {
+        let commit_msg = commit.message.replace('\n', " ");
+
+        // Walk the tree to find all files in this commit
+        let tree_text = objects::read_object(&repo.objects_path, &commit.tree_hash)?;
+        let tree = objects::Tree::from_text(&tree_text)?;
+        let mut meta_refs: Vec<(String, String)> = Vec::new();
+        collect_meta_with_hashes(&repo.objects_path, &tree, &mut meta_refs, "")?;
+
+        for (meta_hash, filepath) in &meta_refs {
+            let meta_text = objects::read_object(&repo.objects_path, meta_hash)?;
+            if let Ok(meta) = Meta::from_text(&meta_text) {
+                let file_size = meta.size.to_string();
                 wtr.write_record([
-                    "meta",
-                    &hash_str,
-                    &meta.size.to_string(),
-                    &meta.mtime.to_string(),
-                    &format!("{:o}", meta.permissions),
+                    &commit_date,
+                    &hash,
+                    &commit_msg,
+                    filepath,
                     &meta.binary_hash,
-                    &meta.volume_id,
-                    &meta.path,
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
+                    &file_size,
                 ])
                 .map_err(|e| NgdarError::Other(format!("CSV write error: {}", e)))?;
                 count += 1;
             }
-        } else if content.contains("tool_version") && content.contains("author") {
-            // Commit object — has tool_version, author, tree, parent, timestamp fields
-            let mut tree_hash = String::new();
-            let mut parent_hash = String::new();
-            let mut timestamp = String::new();
-            let mut message = String::new();
-
-            for line in content.lines() {
-                let line = line.trim();
-                if let Some((key, value)) = line.split_once(' ') {
-                    match key {
-                        "tree" => tree_hash = value.to_string(),
-                        "parent" if value != "none" => parent_hash = value.to_string(),
-                        "timestamp" => timestamp = value.to_string(),
-                        _ => {}
-                    }
-                }
-            }
-            // Message is after the first blank line
-            if let Some(blank_pos) = content.find("\n\n") {
-                message = content[blank_pos + 2..].trim().to_string();
-                if message.len() > 100 {
-                    message = message.chars().take(100).collect::<String>() + "...";
-                }
-            }
-
-            wtr.write_record([
-                "commit",
-                &hash_str,
-                "",
-                "",
-                "",
-                "",
-                "",
-                "",
-                &tree_hash,
-                &parent_hash,
-                &timestamp,
-                &message,
-                "",
-            ])
-            .map_err(|e| NgdarError::Other(format!("CSV write error: {}", e)))?;
-            count += 1;
-        } else if content.starts_with("tree ")
-            || content
-                .lines()
-                .all(|l| l.is_empty() || l.split(' ').count() == 3)
-        {
-            // Tree object — lines of "kind hash name"
-            let entry_count = content.lines().filter(|l| !l.is_empty()).count();
-            wtr.write_record([
-                "tree",
-                &hash_str,
-                "",
-                "",
-                "",
-                "",
-                "",
-                "",
-                "",
-                "",
-                "",
-                "",
-                &entry_count.to_string(),
-            ])
-            .map_err(|e| NgdarError::Other(format!("CSV write error: {}", e)))?;
-            count += 1;
         }
-        // Skip unrecognized objects
+
+        current = commit.parent_hash;
     }
 
     wtr.flush()
         .map_err(|e| NgdarError::Other(format!("CSV flush error: {}", e)))?;
 
-    println!("Exported {} object(s) to {}", count, csv_path);
+    println!("Exported {} file-entry record(s) to {}", count, csv_path);
     Ok(())
 }
