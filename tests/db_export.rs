@@ -62,6 +62,10 @@ fn test_db_export() {
         csv_content.contains("file_size"),
         "CSV should have file_size header"
     );
+    assert!(
+        csv_content.contains("volume_id"),
+        "CSV should have volume_id header"
+    );
     // Check data
     assert!(
         csv_content.contains("data.bin"),
@@ -70,5 +74,9 @@ fn test_db_export() {
     assert!(
         csv_content.contains("Export test"),
         "CSV should contain commit message"
+    );
+    assert!(
+        csv_content.contains("DVD-EXPORT"),
+        "CSV should contain volume_id value"
     );
 }
