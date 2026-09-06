@@ -15,17 +15,9 @@
 //! See [`cli::Commands`] for the full command-line interface.
 #![warn(missing_docs)]
 
-mod cache;
-mod cli;
-mod commands;
-mod config;
-mod error;
-mod hash;
-mod ignore;
-mod objects;
-
 use clap::Parser;
-use cli::{Cli, Commands};
+use ngdar::cli::{Cli, Commands};
+use ngdar::commands;
 
 /// Program entry point.
 ///

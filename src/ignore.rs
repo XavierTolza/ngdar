@@ -1,7 +1,7 @@
 //! `.ngdarignore` file pattern matching and untracked file discovery.
 //!
-//! Provides [`IgnoreRules`] for filtering out ignored files and
-//! [`list_untracked`] for finding files not yet tracked in the repository.
+//! Provides IgnoreRules for filtering out ignored files and
+//! list_untracked for finding files not yet tracked in the repository.
 
 use crate::error::NgdarError;
 use std::path::Path;
@@ -17,6 +17,10 @@ pub struct IgnoreRules {
 }
 
 impl IgnoreRules {
+    /// Create a new ruleset with the given patterns.
+    pub fn new(patterns: Vec<String>) -> Self {
+        IgnoreRules { patterns }
+    }
     /// Load rules from the `.ngdarignore` file if it exists.
     ///
     /// Blank lines and lines starting with `#` are ignored.
@@ -34,7 +38,7 @@ impl IgnoreRules {
             }
         }
 
-        Ok(IgnoreRules { patterns })
+        Ok(Self::new(patterns))
     }
 
     /// Check if a relative path should be ignored.
@@ -124,41 +128,3 @@ pub fn list_untracked(root: &Path, tracked: &[String]) -> Result<Vec<String>, Ng
 
 /// The `.ngdarignore` file name.
 pub const NGDAR_IGNORE_FILE: &str = ".ngdarignore";
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_ignore_dot_ngdar() {
-        let rules = IgnoreRules { patterns: vec![] };
-        assert!(rules.is_ignored(".ngdar/HEAD"));
-        assert!(rules.is_ignored(".ngdarignore"));
-    }
-
-    #[test]
-    fn test_ignore_patterns() {
-        let rules = IgnoreRules {
-            patterns: vec!["*.log".into(), "tmp/".into()],
-        };
-        assert!(rules.is_ignored("debug.log"));
-        assert!(rules.is_ignored("sub/debug.log"));
-        assert!(rules.is_ignored("tmp/foo.txt"));
-        assert!(rules.is_ignored("a/b/tmp/foo.txt"));
-        assert!(!rules.is_ignored("src/main.rs"));
-    }
-
-    #[test]
-    fn test_untracked() {
-        let dir = tempfile::TempDir::new().unwrap();
-        std::fs::write(dir.path().join("tracked.txt"), "").unwrap();
-        std::fs::write(dir.path().join("untracked.txt"), "").unwrap();
-        std::fs::create_dir_all(dir.path().join("sub")).unwrap();
-        std::fs::write(dir.path().join("sub/other.txt"), "").unwrap();
-        let tracked = vec!["tracked.txt".into()];
-        let ut = list_untracked(dir.path(), &tracked).unwrap();
-        assert!(ut.contains(&"untracked.txt".to_string()));
-        assert!(ut.contains(&"sub/other.txt".to_string()));
-        assert!(!ut.contains(&"tracked.txt".to_string()));
-    }
-}
