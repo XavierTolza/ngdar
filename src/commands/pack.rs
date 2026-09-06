@@ -27,6 +27,7 @@ pub fn pack(vol_id: &str, out: &str, message: &str) -> Result<(), NgdarError> {
     // Phase 1: Create Meta objects for each staged file
     let mut meta_hash_for_file: std::collections::HashMap<String, String> =
         std::collections::HashMap::new();
+    let mut committed_entries: Vec<(String, String)> = Vec::new();
 
     for rel_str in &index {
         let full_path = repo.path.join(rel_str);
@@ -44,6 +45,8 @@ pub fn pack(vol_id: &str, out: &str, message: &str) -> Result<(), NgdarError> {
             cache.insert(size, mtime, hex.clone(), rel_str.to_string());
             hex
         };
+
+        committed_entries.push((binary_hash.clone(), rel_str.clone()));
 
         // Create Meta object
         let meta = Meta::new(
@@ -98,6 +101,9 @@ pub fn pack(vol_id: &str, out: &str, message: &str) -> Result<(), NgdarError> {
 
     // Phase 4: Build TAR archive
     build_tar_archive(&repo, &index, out, &commit_hash, vol_id)?;
+
+    // Record committed files for future add dedup
+    repo.add_committed(&committed_entries)?;
 
     // Phase 5: Clear index
     repo.clear_index()?;
