@@ -16,6 +16,15 @@ pub const REPO_ID_FILE: &str = "repository_id";
 pub const NGDAR_IGNORE_FILE: &str = ".ngdarignore";
 /// The committed tracking file (`.ngdar/committed`), mapping `binary_hash path`.
 pub const COMMITTED_FILE: &str = "committed";
+/// The deleted tracking file (`.ngdar/deleted`), listing files removed from disk.
+///
+/// This file is included inside TAR archives so that incremental extraction can
+/// remove files that were deleted in later commits.
+pub const DELETED_FILE: &str = "deleted";
+/// Prefix marking a staged deletion in the index file (`.ngdar/index`).
+///
+/// An index line `- <path>` indicates that `<path>` is staged for removal.
+pub const DELETION_PREFIX: &str = "- ";
 
 /// Repository configuration, read from the `.ngdar/` directory.
 pub struct Repository {
@@ -191,5 +200,42 @@ impl Repository {
             .open(&self.committed_path)?
             .write_all(content.as_bytes())?;
         Ok(())
+    }
+
+    /// Remove entries from the committed file matching any of the given paths.
+    ///
+    /// Rewrites the entire committed file from scratch, excluding paths in
+    /// `remove_paths`. Used when committing a deletion so that the deleted
+    /// file is no longer tracked as a committed file.
+    pub fn remove_committed(&self, remove_paths: &[String]) -> Result<(), NgdarError> {
+        let committed = self.read_committed()?;
+        let mut content = String::new();
+        for (hash, path) in &committed {
+            if !remove_paths.contains(path) {
+                content.push_str(&format!("{} {}\n", hash, path));
+            }
+        }
+        std::fs::write(&self.committed_path, content)?;
+        Ok(())
+    }
+
+    /// Write the `.ngdar/deleted` file with the given paths (one per line).
+    pub fn write_deleted(&self, paths: &[String]) -> Result<(), NgdarError> {
+        std::fs::write(self.ngdar_path.join(DELETED_FILE), paths.join("\n"))?;
+        Ok(())
+    }
+
+    /// Read the `.ngdar/deleted` file (returns empty vec if missing).
+    pub fn read_deleted(&self) -> Result<Vec<String>, NgdarError> {
+        let path = self.ngdar_path.join(DELETED_FILE);
+        if !path.exists() {
+            return Ok(Vec::new());
+        }
+        let content = std::fs::read_to_string(&path)?;
+        Ok(content
+            .lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect())
     }
 }

@@ -19,11 +19,17 @@ fn export_with_repo(
     let tree = objects::Tree::from_text(&tree_text)?;
     let mut meta_refs: Vec<(String, String)> = Vec::new();
     collect_meta_with_hashes(&repo.objects_path, &tree, &mut meta_refs, "")?;
+    let mut file_count = meta_refs.len();
+    if !commit.deleted.is_empty() {
+        file_count += commit.deleted.len();
+    }
     println!(
         "Exporting {} file(s) from commit {}...",
-        meta_refs.len(),
-        commit_hash
+        file_count, commit_hash
     );
+    if !commit.deleted.is_empty() {
+        println!("  ({} file(s) marked for deletion)", commit.deleted.len());
+    }
     let file = std::fs::File::create(out_path)?;
     let mut builder = tar::Builder::new(&file);
     add_dir_to_tar(&mut builder, &repo.ngdar_path, ".ngdar", &repo.ngdar_path)?;
@@ -61,6 +67,10 @@ fn export_with_repo(
             exported += 1;
         }
     }
+
+    // Add .ngdar/deleted if the commit has deleted files
+    append_deleted_to_tar(&mut builder, &commit.deleted)?;
+
     builder.finish()?;
     println!("Exported {} file(s) to {}", exported, out_path);
     if warnings > 0 {

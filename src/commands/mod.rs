@@ -77,6 +77,13 @@ fn add_dir_to_tar(
             .map_err(|_| NgdarError::Other("Path error in tar".into()))?;
         let tar_path = format!("{}/{}", tar_prefix, relative.to_str().unwrap_or(""));
 
+        // The .ngdar/deleted marker is added explicitly by the caller so that
+        // it always reflects the exact commit being packed/exported rather
+        // than whatever is currently on disk.
+        if relative == crate::config::DELETED_FILE {
+            continue;
+        }
+
         if entry.file_type().is_dir() {
             // Tar format: add directory entry
             let mut header = tar::Header::new_gnu();
@@ -100,6 +107,29 @@ fn add_dir_to_tar(
         }
     }
     Ok(())
+}
+
+/// Append a `.ngdar/deleted` marker file to the TAR with the given paths.
+fn append_deleted_to_tar(
+    builder: &mut tar::Builder<&std::fs::File>,
+    deleted: &[String],
+) -> Result<(), NgdarError> {
+    if deleted.is_empty() {
+        return Ok(());
+    }
+    let deleted_content = deleted.join("\n");
+    let mut header = tar::Header::new_gnu();
+    header.set_size(deleted_content.len() as u64);
+    header.set_mode(0o644);
+    header.set_entry_type(tar::EntryType::Regular);
+    let tar_path = format!(".ngdar/{}", crate::config::DELETED_FILE);
+    builder
+        .append_data(
+            &mut header,
+            tar_path.as_str(),
+            std::io::Cursor::new(deleted_content),
+        )
+        .map_err(|e| NgdarError::Other(format!("TAR error: {}", e)))
 }
 
 fn collect_meta_with_hashes(
@@ -128,6 +158,7 @@ fn collect_meta_with_hashes(
 fn build_tar_archive(
     repo: &Repository,
     staged_files: &[String],
+    deleted: &[String],
     out_path: &str,
     _commit_hash: &str,
     _vol_id: &str,
@@ -137,6 +168,9 @@ fn build_tar_archive(
 
     // --- Add full .ngdar/ metadata directory ---
     add_dir_to_tar(&mut builder, &repo.ngdar_path, ".ngdar", &repo.ngdar_path)?;
+
+    // --- Add .ngdar/deleted marker for incremental extraction ---
+    append_deleted_to_tar(&mut builder, deleted)?;
 
     // --- Add files with original tree structure ---
     for rel_path in staged_files {
@@ -164,6 +198,23 @@ fn build_tar_archive(
     // Finalize the archive
     builder.finish()?;
     Ok(())
+}
+
+/// Split raw index entries into staged (added) and staged-deleted paths.
+///
+/// Index lines starting with `- ` mark files staged for deletion; all other
+/// non-empty entries are treated as files staged for addition or modification.
+pub fn parse_index(index: &[String]) -> (Vec<String>, Vec<String>) {
+    let mut added = Vec::new();
+    let mut deleted = Vec::new();
+    for entry in index {
+        if let Some(rest) = entry.strip_prefix(crate::config::DELETION_PREFIX) {
+            deleted.push(rest.to_string());
+        } else {
+            added.push(entry.clone());
+        }
+    }
+    (added, deleted)
 }
 
 // ---------------------------------------------------------------------------

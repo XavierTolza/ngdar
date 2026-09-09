@@ -1,6 +1,10 @@
 use super::*;
 
 /// Stage files for the next archive.
+///
+/// Existing files are staged for addition or modification. Files that are
+/// committed but missing from disk — whether given directly or discovered
+/// inside a directory — are staged for deletion (like `git rm` / `git add`).
 pub fn add(paths: &[String]) -> Result<(), NgdarError> {
     let cwd = std::env::current_dir()?;
     let repo = Repository::find(&cwd)?;
@@ -12,6 +16,7 @@ pub fn add(paths: &[String]) -> Result<(), NgdarError> {
     let mut index = repo.read_index()?;
     let committed = repo.read_committed()?;
     let mut new_count: usize = 0;
+    let mut delete_count: usize = 0;
 
     for path_str in paths {
         let path = if Path::new(path_str).is_absolute() {
@@ -37,7 +42,7 @@ pub fn add(paths: &[String]) -> Result<(), NgdarError> {
         }
 
         if path.is_dir() {
-            // Walk directory recursively
+            // Walk directory recursively, staging existing files as additions
             for entry in walkdir::WalkDir::new(&path).into_iter().filter_entry(|e| {
                 let name = e.file_name().to_str().unwrap_or("");
                 !name.starts_with(".ngdar")
@@ -61,9 +66,31 @@ pub fn add(paths: &[String]) -> Result<(), NgdarError> {
                     new_count += 1;
                 }
             }
+
+            // Also detect deletions: committed files under this directory that
+            // no longer exist on disk are staged for removal.
+            let prefix = if rel_str.is_empty() || rel_str == "." {
+                String::new()
+            } else {
+                format!("{}/", rel_str.trim_end_matches('/'))
+            };
+            for (_, committed_path) in &committed {
+                let under_dir = prefix.is_empty() || committed_path.starts_with(&prefix);
+                if under_dir
+                    && !repo.path.join(committed_path).exists()
+                    && stage_deletion(&mut index, committed_path)?
+                {
+                    delete_count += 1;
+                }
+            }
         } else if path.is_file() {
             if add_file(&repo, &mut cache, &committed, rel_str, &mut index)? {
                 new_count += 1;
+            }
+        } else if !path.exists() && is_committed(&committed, rel_str) {
+            // Previously committed file has been deleted from disk: stage the deletion
+            if stage_deletion(&mut index, rel_str)? {
+                delete_count += 1;
             }
         } else {
             return Err(NgdarError::Other(format!(
@@ -81,7 +108,26 @@ pub fn add(paths: &[String]) -> Result<(), NgdarError> {
     repo.write_index(&index)?;
 
     println!("Added {} file(s) to staging area.", new_count);
+    if delete_count > 0 {
+        println!("Staged {} file(s) for deletion.", delete_count);
+    }
     Ok(())
+}
+
+/// Stage a committed file as deleted in the index.
+///
+/// The removal is stored as a `- <path>` entry. If the file was already staged
+/// as an addition, that entry is replaced so the two states cannot coexist.
+fn stage_deletion(index: &mut Vec<String>, rel_str: &str) -> Result<bool, NgdarError> {
+    let marker = format!("{}{}", crate::config::DELETION_PREFIX, rel_str);
+    if index.contains(&marker) {
+        println!("   already staged for deletion: {}", rel_str);
+        return Ok(false);
+    }
+    index.retain(|e| e != rel_str);
+    index.push(marker);
+    println!("   staged for deletion: {}", rel_str);
+    Ok(true)
 }
 
 fn add_file(
@@ -95,6 +141,14 @@ fn add_file(
     let metadata = std::fs::metadata(&full_path)?;
     let size = metadata.len();
     let mtime = get_mtime(&metadata);
+
+    // If this file was previously staged for deletion, cancel that deletion
+    // (the file was re-created on disk, so we re-add it as a normal addition)
+    let delete_marker = format!("{}{}", crate::config::DELETION_PREFIX, rel_str);
+    if index.contains(&delete_marker) {
+        index.retain(|e| *e != delete_marker);
+        // Fall through: the file will be added as a normal entry below
+    }
 
     // Already staged — no need to check committed
     if index.contains(&rel_str.to_string()) {

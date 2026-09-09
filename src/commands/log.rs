@@ -78,7 +78,14 @@ fn log_commit_files(repo: &Repository, commit_hash: &str) -> Result<(), NgdarErr
         }
     }
 
+    for deleted_path in &commit.deleted {
+        println!(
+            "{:<8} {:<20} {:<64} {} (deleted)",
+            "-", "-", "", deleted_path
+        );
+    }
+
     println!("{}", "-".repeat(120));
-    println!("Total files: {}", meta_refs.len());
+    println!("Total files: {}", meta_refs.len() + commit.deleted.len());
     Ok(())
 }

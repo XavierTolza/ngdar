@@ -8,15 +8,20 @@ pub fn pack(vol_id: &str, out: &str, message: &str) -> Result<(), NgdarError> {
     let cache_path = repo.cache_path();
     let mut cache = CacheStore::load(&cache_path)?;
 
-    // Read index
+    // Read index and separate additions from deletions
     let index = repo.read_index()?;
-    if index.is_empty() {
+    let (added, deleted) = parse_index(&index);
+
+    if added.is_empty() && deleted.is_empty() {
         return Err(NgdarError::Other(
             "Nothing to pack. Use 'ngdar add' first.".to_string(),
         ));
     }
 
-    println!("Packing {} file(s)...", index.len());
+    println!("Packing {} file(s)...", added.len());
+    if !deleted.is_empty() {
+        println!("Removing {} file(s)...", deleted.len());
+    }
     println!("Volume ID: {}", vol_id);
 
     // Ensure cache directory exists for potential new entries
@@ -24,12 +29,12 @@ pub fn pack(vol_id: &str, out: &str, message: &str) -> Result<(), NgdarError> {
         std::fs::create_dir_all(parent)?;
     }
 
-    // Phase 1: Create Meta objects for each staged file
+    // Phase 1: Create Meta objects for each staged file (additions only)
     let mut meta_hash_for_file: std::collections::HashMap<String, String> =
         std::collections::HashMap::new();
     let mut committed_entries: Vec<(String, String)> = Vec::new();
 
-    for rel_str in &index {
+    for rel_str in &added {
         let full_path = repo.path.join(rel_str);
         let metadata = std::fs::metadata(&full_path)?;
         let size = metadata.len();
@@ -66,7 +71,7 @@ pub fn pack(vol_id: &str, out: &str, message: &str) -> Result<(), NgdarError> {
     // Save updated cache
     cache.save()?;
 
-    // Phase 2: Build Tree objects from the staged files
+    // Phase 2: Build Tree objects from the staged files (additions only)
     let staged_refs: Vec<(&str, &str)> = meta_hash_for_file
         .iter()
         .map(|(path, hash)| (path.as_str(), hash.as_str()))
@@ -91,6 +96,7 @@ pub fn pack(vol_id: &str, out: &str, message: &str) -> Result<(), NgdarError> {
         format!("ngdar-{}", env!("CARGO_PKG_VERSION")),
         now(),
         message.to_string(),
+        deleted.clone(),
     );
 
     let commit_text = commit.to_text();
@@ -99,16 +105,20 @@ pub fn pack(vol_id: &str, out: &str, message: &str) -> Result<(), NgdarError> {
 
     println!("Commit: {}", commit_hash);
 
-    // Record committed files before building the archive so that
-    // .ngdar/committed is included in the TAR
+    // Remove deleted files from the committed tracking, then record new ones
+    if !deleted.is_empty() {
+        repo.remove_committed(&deleted)?;
+        // Write .ngdar/deleted file so it gets included in the TAR archive
+        repo.write_deleted(&deleted)?;
+    }
     repo.add_committed(&committed_entries)?;
 
     // Clear index before building the archive so that .ngdar/index
     // inside the TAR reflects the post-commit state (empty staging area)
     repo.clear_index()?;
 
-    // Phase 4: Build TAR archive
-    build_tar_archive(&repo, &index, out, &commit_hash, vol_id)?;
+    // Phase 4: Build TAR archive (only the added files are included as data)
+    build_tar_archive(&repo, &added, &deleted, out, &commit_hash, vol_id)?;
 
     println!("Created archive: {}", out);
     println!("Done. Index has been cleared.");

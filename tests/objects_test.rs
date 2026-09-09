@@ -43,12 +43,14 @@ fn test_commit_roundtrip() {
         "ngdar-1.0.0".into(),
         1788118091,
         "Test commit message.".into(),
+        vec![],
     );
     let text = commit.to_text();
     let parsed = Commit::from_text(&text).unwrap();
     assert_eq!(parsed.tree_hash, "treehash123");
     assert_eq!(parsed.parent_hash.unwrap(), "parent456");
     assert_eq!(parsed.message, "Test commit message.");
+    assert!(parsed.deleted.is_empty());
 }
 
 #[test]
@@ -61,10 +63,31 @@ fn test_commit_first() {
         "ngdar-1.0.0".into(),
         1000,
         "Initial.".into(),
+        vec![],
     );
     assert!(commit.parent_hash.is_none());
     let text = commit.to_text();
     assert!(text.contains("parent none"));
+}
+
+#[test]
+fn test_commit_with_deletions() {
+    let commit = Commit::new(
+        "treehash".into(),
+        None,
+        "Xavier".into(),
+        "Linux".into(),
+        "ngdar-1.0.0".into(),
+        1000,
+        "Removed files.".into(),
+        vec!["old.txt".into(), "gone.bin".into()],
+    );
+    let text = commit.to_text();
+    assert!(text.contains("deleted\nold.txt\ngone.bin"));
+    let parsed = Commit::from_text(&text).unwrap();
+    assert_eq!(parsed.deleted.len(), 2);
+    assert_eq!(parsed.deleted[0], "old.txt");
+    assert_eq!(parsed.deleted[1], "gone.bin");
 }
 
 #[test]

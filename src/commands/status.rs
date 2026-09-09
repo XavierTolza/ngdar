@@ -7,8 +7,9 @@ pub fn status() -> Result<(), NgdarError> {
     let repo = Repository::find(&cwd)?;
     let ignore_rules = IgnoreRules::load(&repo.path)?;
 
-    // Read current index (staged)
-    let staged = repo.read_index()?;
+    // Read current index (staged) — split into additions and deletions
+    let index = repo.read_index()?;
+    let (staged, staged_deleted) = parse_index(&index);
 
     // Read HEAD to get previously committed files
     let head_hash = repo.read_head()?;
@@ -44,7 +45,7 @@ pub fn status() -> Result<(), NgdarError> {
             }
         } else {
             // File was deleted from disk
-            if !staged.contains(rel_path) {
+            if !staged_deleted.contains(rel_path) {
                 unstaged.push(format!("{} (deleted)", rel_path));
             }
         }
@@ -54,19 +55,27 @@ pub fn status() -> Result<(), NgdarError> {
     let untracked = ignore::list_untracked(&repo.path, &committed_files)?;
     let untracked: Vec<String> = untracked
         .into_iter()
-        .filter(|p| !staged.contains(p) && !ignore_rules.is_ignored(p))
+        .filter(|p| {
+            !staged.contains(p) && !staged_deleted.contains(p) && !ignore_rules.is_ignored(p)
+        })
         .collect();
 
     // Print status
     println!("=== ngdar status ===");
     println!();
 
-    if staged.is_empty() {
+    if staged.is_empty() && staged_deleted.is_empty() {
         println!("(nothing staged)");
     } else {
         println!("Staged files:");
         for f in &staged {
             println!("   \x1b[32m✓ {}\x1b[0m", f);
+        }
+        if !staged_deleted.is_empty() {
+            println!("Staged for deletion:");
+            for f in &staged_deleted {
+                println!("   \x1b[31m✗ {}\x1b[0m", f);
+            }
         }
     }
     println!();

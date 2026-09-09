@@ -253,7 +253,8 @@ impl Tree {
 /// A Commit object — a snapshot of the entire repository state.
 ///
 /// Contains a reference to the root Tree object, an optional parent commit,
-/// authorship and provenance metadata, a timestamp, and a commit message.
+/// authorship and provenance metadata, a timestamp, a commit message,
+/// and an optional list of files deleted in this commit.
 #[derive(Debug, Clone)]
 pub struct Commit {
     /// BLAKE3 hash of the root Tree object.
@@ -270,10 +271,13 @@ pub struct Commit {
     pub timestamp: i64,
     /// Commit message.
     pub message: String,
+    /// Files deleted in this commit (relative paths).
+    pub deleted: Vec<String>,
 }
 
 impl Commit {
     /// Create a new Commit object.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         tree_hash: String,
         parent_hash: Option<String>,
@@ -282,6 +286,7 @@ impl Commit {
         tool_version: String,
         timestamp: i64,
         message: String,
+        deleted: Vec<String>,
     ) -> Self {
         Commit {
             tree_hash,
@@ -291,6 +296,7 @@ impl Commit {
             tool_version,
             timestamp,
             message,
+            deleted,
         }
     }
 
@@ -307,12 +313,19 @@ impl Commit {
     ///
     /// <message>
     /// ```
+    ///
+    /// If the commit has deleted files, a `deleted` section follows:
+    /// ```text
+    /// deleted
+    /// path/to/file1
+    /// path/to/file2
+    /// ```
     pub fn to_text(&self) -> String {
         let parent = match &self.parent_hash {
             Some(hash) => format!("parent {}", hash),
             None => "parent none".to_string(),
         };
-        format!(
+        let mut text = format!(
             "tree {}\n\
              {}\n\
              author {}\n\
@@ -328,7 +341,15 @@ impl Commit {
             self.tool_version,
             self.timestamp,
             self.message
-        )
+        );
+        if !self.deleted.is_empty() {
+            text.push_str("\ndeleted\n");
+            for path in &self.deleted {
+                text.push_str(path);
+                text.push('\n');
+            }
+        }
+        text
     }
 
     /// Parse a Commit object from its text representation.
@@ -340,7 +361,9 @@ impl Commit {
         let mut tool_version = None;
         let mut timestamp = None;
         let mut message = String::new();
+        let mut deleted: Vec<String> = Vec::new();
         let mut in_message = false;
+        let mut in_deleted = false;
 
         for line in text.lines() {
             let line = line.trim();
@@ -348,7 +371,18 @@ impl Commit {
                 in_message = true;
                 continue;
             }
+            if in_deleted {
+                if line.is_empty() {
+                    continue;
+                }
+                deleted.push(line.to_string());
+                continue;
+            }
             if in_message {
+                if line == "deleted" {
+                    in_deleted = true;
+                    continue;
+                }
                 if !message.is_empty() {
                     message.push('\n');
                 }
@@ -387,6 +421,7 @@ impl Commit {
                 .ok_or_else(|| NgdarError::Parse("Missing tool_version".into()))?,
             timestamp: timestamp.ok_or_else(|| NgdarError::Parse("Missing timestamp".into()))?,
             message,
+            deleted,
         })
     }
 }
