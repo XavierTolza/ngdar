@@ -1,13 +1,12 @@
 <div align="center">
 
-<img src="https://i.ibb.co/tnKGZHv/Sans-titre.jpg" alt="NGDAR — New Generation Disk Archiving" width="600">
+<img src="ngdar-banner.jpg" alt="NGDAR — New Generation Disk Archiving" width="600">
 
 **Git-like incremental archiving for massive binary files on optical media**
 
 [![CI](https://github.com/XavierTolza/ngdar/actions/workflows/ci.yml/badge.svg)](https://github.com/XavierTolza/ngdar/actions/workflows/ci.yml)
 [![Rust](https://img.shields.io/badge/rust-1.70%2B-orange)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://opensource.org/licenses/MIT)
-[![Crates.io](https://img.shields.io/badge/crates.io-1.0.0-green)](https://crates.io)
 
 </div>
 
@@ -25,6 +24,7 @@ Each `.tar` archive it produces contains the **complete history** of your data p
 
 - **Incremental archiving** — Only new or changed files go into each archive
 - **Plain-text metadata** — No proprietary database. A simple `cat` is all you need to read the entire history
+- **No vendor lock-in** — Your data never depends on a closed format or a specific tool
 - **Content-addressable storage** — Every file is identified by its BLAKE3 hash (automatic deduplication)
 - **Free-form volume IDs** — Name your volumes however you like (`DVD-001`, `LTO-2026-08`, …)
 - **OS-level cache** — Hashes cached in `~/.cache/ngdar/` for near-instant subsequent runs
@@ -53,10 +53,10 @@ cp target/release/ngdar ~/.local/bin/    # or anywhere in your PATH
 ngdar --version
 ```
 
-### Via Cargo
+### Via `cargo install`
 
 ```bash
-cargo install ngdar
+cargo install --git https://github.com/XavierTolza/ngdar.git
 ```
 
 ---
@@ -138,7 +138,7 @@ ngdar log a1b2c3d4e5f6...
 
 2. **Plain-text metadata** — All history (commits, trees, file metadata) is stored as readable text files named by their own BLAKE3 hash. No database, no proprietary format.
 
-3. **Self-contained archives** — Each `.tar` archive carries the **complete** metadata history plus **only** the binary files changed in that session. A single archive is enough to know the full state of the project.
+3. **Self-contained archives** — Each `.tar` archive carries the **complete** metadata history plus **only** the binary files changed in that session. This makes it easy to keep track of which disk each file was stored on: any single archive is enough to know exactly where every file lives.
 
 ### Repository structure
 
@@ -285,11 +285,3 @@ Please keep these practices in mind:
 ## 📄 License
 
 Distributed under the **MIT** license. See the `LICENSE` file for details.
-
----
-
-<div align="center">
-
-**NGDAR** — *Because your archives deserve better than a pile of files scattered across unindexed discs.*
-
-</div>
