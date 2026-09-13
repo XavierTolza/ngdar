@@ -70,6 +70,59 @@ fn pack_archive_index_is_empty_after_extraction() {
     );
 }
 
+#[test]
+fn archive_extract_then_status_is_clean() {
+    // Scenario: create an ngdar repo, add a file, pack (commit) into an archive,
+    // extract the archive to a new location, then run `ngdar status` inside the
+    // extracted directory — it should show nothing staged, nothing unstaged,
+    // nothing untracked (everything clean).
+    let dir = tempfile::TempDir::new().unwrap();
+    let root = dir.path().to_path_buf();
+
+    // Init repo and create one file
+    common::run_ngdar(&root, &["init"]).unwrap();
+    std::fs::write(root.join("hello.txt"), "hello world").unwrap();
+
+    // Add and pack
+    common::run_ngdar(&root, &["add", "hello.txt"]).unwrap();
+    let tar_path = root.join("archive.tar");
+    let out = common::run_ngdar(
+        &root,
+        &[
+            "pack",
+            "--vol-id",
+            "VOL-001",
+            "--out",
+            tar_path.to_str().unwrap(),
+            "-m",
+            "first commit",
+        ],
+    )
+    .unwrap();
+    assert!(out.contains("Created archive"));
+
+    // Extract the archive
+    let extract_dir = root.join("extracted");
+    std::fs::create_dir_all(&extract_dir).unwrap();
+    let tar_out = std::process::Command::new("tar")
+        .args(["-xf", tar_path.to_str().unwrap()])
+        .current_dir(&extract_dir)
+        .output()
+        .unwrap();
+    assert!(tar_out.status.success(), "tar extraction failed");
+
+    // Run ngdar status in the extracted directory — everything must be clean
+    let out = common::run_ngdar(&extract_dir, &["status"]).unwrap();
+    assert!(
+        out.contains("(nothing staged)"),
+        "Expected (nothing staged): {out}"
+    );
+    assert!(
+        out.contains("(no unstaged changes)"),
+        "Expected (no unstaged changes): {out}"
+    );
+}
+
 fn setup_repo() -> (tempfile::TempDir, std::path::PathBuf) {
     let dir = tempfile::TempDir::new().unwrap();
     let root = dir.path().to_path_buf();
