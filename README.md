@@ -265,6 +265,26 @@ Hooks check formatting, forbid certain patterns, and run the full CI suite befor
 
 ---
 
+## 🚀 Releasing
+
+Releases are fully automated from the GitHub web UI — no local steps.
+
+1. Go to the **Actions** tab → **Release** → **Run workflow**.
+2. Enter the version (e.g. `1.2.0`) and the branch to release from (default: `develop`).
+3. Click **Run workflow**. The pipeline then:
+   - opens a `Release v1.2.0` pull request that merges the source branch into `master`,
+   - runs the full CI on that release branch,
+   - merges it into `master` (only if CI passed),
+   - tags `master` with `v1.2.0`,
+   - builds and publishes a GitHub Release with cross-platform binaries
+     (Linux gnu/musl on x86_64/aarch64/armv7, macOS Intel/Apple Silicon,
+     Windows) plus `.deb` and `.rpm` packages.
+
+Versions ending in a pre-release suffix (e.g. `1.2.0-rc.1`) are published as
+GitHub pre-releases automatically.
+
+---
+
 ## 🤝 Contributing
 
 Contributions are welcome! Here's how:

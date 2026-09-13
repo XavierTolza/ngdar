@@ -11,7 +11,7 @@ use clap::{Parser, Subcommand};
 /// Archives are standard .tar files containing both full metadata history
 /// and incremental binary data, suitable for long-term cold storage.
 #[derive(Parser, Debug)]
-#[command(name = "ngdar", version = "1.0.0", about, long_about = None)]
+#[command(name = "ngdar", version, about, long_about = None)]
 pub struct Cli {
     /// The subcommand to execute
     #[command(subcommand)]

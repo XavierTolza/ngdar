@@ -4,6 +4,31 @@ version = "1.0.0"
 edition = "2021"
 description = "New Generation Disk Archiving - Git-like incremental archiving for massive binary files"
 authors = ["Xavier <xavier@example.com>"]
+license = "MIT"
+repository = "https://github.com/XavierTolza/ngdar"
+readme = "README.md"
+
+[[bin]]
+name = "ngdar"
+path = "src/main.rs"
+
+[package.metadata.deb]
+maintainer = "Xavier <xavier@example.com>"
+copyright = "2026, Xavier"
+license-file = ["LICENSE", "0"]
+depends = "$auto"
+section = "utility"
+priority = "optional"
+assets = [
+    ["target/release/ngdar", "usr/bin/", "755"],
+    ["README.md", "usr/share/doc/ngdar/README.md", "644"],
+]
+
+[package.metadata.generate-rpm]
+assets = [
+    { source = "target/release/ngdar", dest = "/usr/bin/ngdar", mode = "755" },
+    { source = "README.md", dest = "/usr/share/doc/ngdar/README.md", mode = "644" },
+]
 
 [dependencies]
 blake3 = "1.5"
