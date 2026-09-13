@@ -24,14 +24,14 @@ pub fn add(paths: &[String]) -> Result<(), NgdarError> {
         let rel_path = path.strip_prefix(&repo.path).map_err(|_| {
             NgdarError::Other(format!("Path '{}' is outside the repository", path_str))
         })?;
-        let rel_str = rel_path.to_str().unwrap_or("");
+        let rel_str = crate::path_to_slash(rel_path);
 
         if rel_str.starts_with(".ngdar") || rel_str == ".ngdarignore" {
             eprintln!("Skipping ngdar internal: {}", path_str);
             continue;
         }
 
-        if ignore_rules.is_ignored(rel_str) {
+        if ignore_rules.is_ignored(&rel_str) {
             eprintln!("Skipping ignored: {}", path_str);
             continue;
         }
@@ -47,12 +47,11 @@ pub fn add(paths: &[String]) -> Result<(), NgdarError> {
                     continue;
                 }
                 let file_path = entry.path();
-                let file_rel = file_path
-                    .strip_prefix(&repo.path)
-                    .map_err(|_| NgdarError::Other("Path error".into()))?
-                    .to_str()
-                    .unwrap_or("")
-                    .to_string();
+                let file_rel = crate::path_to_slash(
+                    file_path
+                        .strip_prefix(&repo.path)
+                        .map_err(|_| NgdarError::Other("Path error".into()))?,
+                );
 
                 if ignore_rules.is_ignored(&file_rel) {
                     continue;
@@ -62,7 +61,7 @@ pub fn add(paths: &[String]) -> Result<(), NgdarError> {
                 }
             }
         } else if path.is_file() {
-            if add_file(&repo, &mut cache, &committed, rel_str, &mut index)? {
+            if add_file(&repo, &mut cache, &committed, &rel_str, &mut index)? {
                 new_count += 1;
             }
         } else {
