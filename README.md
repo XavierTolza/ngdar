@@ -1,6 +1,6 @@
 <div align="center">
 
-# 📀 NGDAR — New Generation Disk Archiving
+<img src="https://i.ibb.co/tnKGZHv/Sans-titre.jpg" alt="NGDAR — New Generation Disk Archiving" width="600">
 
 **Git-like incremental archiving for massive binary files on optical media**
 
@@ -8,56 +8,52 @@
 [![Rust](https://img.shields.io/badge/rust-1.70%2B-orange)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://opensource.org/licenses/MIT)
 [![Crates.io](https://img.shields.io/badge/crates.io-1.0.0-green)](https://crates.io)
-[![Docs](https://img.shields.io/badge/docs-README-brightgreen)](https://github.com/XavierTolza/ngdar#readme)
 
 </div>
 
 ---
 
-NGDAR vous permet de gérer l'archivage de vos fichiers volumineux sur disques optiques (DVD, Blu-ray) ou bandes LTO **comme vous géreriez du code avec Git**.
+**NGDAR** lets you archive large files onto optical discs (DVD, Blu-ray) or LTO tapes the same way you manage code with Git.
 
-Chaque archive `.tar` produite contient **l'historique complet** de vos données ainsi que **seulement les fichiers modifiés** depuis la dernière session. Plus besoin de tout re-graver à chaque fois : un simple coup d'œil dans les métadonnées en texte clair vous indique quel volume contient quel fichier.
+Each `.tar` archive it produces contains the **complete history** of your data plus **only the files that changed** since the last session. No more burning everything from scratch every time — a quick look at the plain-text metadata tells you exactly which volume holds which file.
 
-> **Cas d'usage typique** : vous avez 50 Go de photos, vidéos ou documents d'archive à sauvegarder sur des DVD de 4,7 Go. NGDAR découpe l'archivage en sessions, et chaque DVD contient les nouveaux fichiers + l'index complet de toutes vos données.
+> **Typical use case**: you have 50 GB of photos, videos, or documents to back up across 4.7 GB DVDs. NGDAR splits the work into incremental sessions, and each DVD carries the new files **plus** the full index of everything you've ever archived.
 
 ---
 
-## ✨ Fonctionnalités
+## ✨ Features
 
-- **Archivage incrémental** — Seuls les fichiers nouveaux ou modifiés sont ajoutés à chaque archive
-- **Métadonnées en texte clair** — Pas de base de données propriétaire. Un simple `cat` suffit pour lire l'historique
-- **Content-Addressable Storage** — Chaque fichier est identifié par son hash BLAKE3 (déduplication automatique)
-- **Auto-numérotation des volumes** — Identifiant de volume libre (DVD-001, LOT-2026-08, etc.)
-- **Cache système** — Les hashs sont mis en cache dans `~/.cache/ngdar/` pour des exécutions ultra-rapides
-- **`.ngdarignore`** — Excluez fichiers temporaires, logs, et autres artefacts
-- **Standard `.tar`** — Les archives sont lisibles avec n'importe quel décompresseur
-- **Export CSV** — Exportez toute votre base de métadonnées pour inventaire
+- **Incremental archiving** — Only new or changed files go into each archive
+- **Plain-text metadata** — No proprietary database. A simple `cat` is all you need to read the entire history
+- **Content-addressable storage** — Every file is identified by its BLAKE3 hash (automatic deduplication)
+- **Free-form volume IDs** — Name your volumes however you like (`DVD-001`, `LTO-2026-08`, …)
+- **OS-level cache** — Hashes cached in `~/.cache/ngdar/` for near-instant subsequent runs
+- **`.ngdarignore`** — Exclude temp files, logs, and other artifacts
+- **Standard `.tar` output** — Archives can be extracted with any tar-compatible tool
+- **CSV export** — Dump your entire metadata database for inventory purposes
 
 ---
 
 ## 🚀 Installation
 
-### Prérequis
+### Prerequisites
 
-- [Rust](https://www.rust-lang.org) 1.70 ou plus récent
-- Un système Linux, macOS (ou Windows avec un environnement Unix)
+- [Rust](https://www.rust-lang.org) 1.70 or newer
+- Linux, macOS (or Windows with a Unix environment)
 
-### Depuis les sources
+### From source
 
 ```bash
-# Clonez le dépôt
 git clone https://github.com/XavierTolza/ngdar.git
 cd ngdar
 
-# Compilez et installez
 cargo build --release
-cp target/release/ngdar ~/.local/bin/    # ou n'importe où dans votre PATH
+cp target/release/ngdar ~/.local/bin/    # or anywhere in your PATH
 
-# Vérifiez
 ngdar --version
 ```
 
-### Avec Cargo (si publié sur crates.io)
+### Via Cargo
 
 ```bash
 cargo install ngdar
@@ -65,70 +61,70 @@ cargo install ngdar
 
 ---
 
-## 📖 Utilisation pas à pas
+## 📖 Step-by-step guide
 
-### 1. Initialiser un dépôt
+### 1. Initialize a repository
 
 ```bash
-cd /chemin/vers/mes/donnees/
+cd /path/to/my/data/
 ngdar init
 ```
 
-Un répertoire caché `.ngdar/` est créé. Il contiendra toutes les métadonnées (jamais les fichiers binaires).
+A hidden `.ngdar/` directory is created. It will hold all metadata (never the binary files themselves).
 
-### 2. Ajouter des fichiers
+### 2. Add files
 
 ```bash
 ngdar add photos/ videos/ documents/
-ngdar add rapport-final.pdf
+ngdar add final-report.pdf
 ```
 
-NGDAR calcule le hash BLAKE3 de chaque fichier et l'ajoute à la zone de staging (l'index). Si un fichier est déjà archivé sans modification, il est signalé et ignoré.
+NGDAR computes the BLAKE3 hash of each file and adds it to the staging area (the index). Files that are already archived unchanged are detected and skipped.
 
-### 3. Vérifier l'état
+### 3. Check status
 
 ```bash
 ngdar status
 ```
 
-Trois catégories s'affichent :
+Three categories are shown:
 
-| État | Description |
+| State | Description |
 |---|---|
-| ✅ **Staged** | Prêt à être packagé |
-| 🔶 **Unstaged** | Modifié sur le disque mais pas re-stagé |
-| ❓ **Untracked** | Nouveau fichier non encore suivi |
+| ✅ **Staged** | Ready to be packed |
+| 🔶 **Unstaged** | Modified on disk but not re-staged |
+| ❓ **Untracked** | New file not yet tracked |
 
-### 4. Créer une archive
+### 4. Create an archive
 
 ```bash
-ngdar pack --vol-id "DVD-001" --out archive_001.tar -m "Première session d'archivage"
+ngdar pack --vol-id "DVD-001" --out archive_001.tar -m "First archival session"
 ```
 
-Cette commande :
-1. Crée les objets **Meta** (taille, date, permissions, hash, volume)
-2. Construit les objets **Tree** et **Commit**
-3. Génère une archive `.tar` contenant :
-   - Le dossier `.ngdar/` complet (historique complet !)
-   - Les fichiers de cette session, dans leur arborescence d'origine
-4. Vide l'index (prêt pour la session suivante)
+This command:
+1. Creates **Meta** objects (size, date, permissions, hash, volume ID)
+2. Builds **Tree** and **Commit** objects
+3. Generates a `.tar` containing:
+   - The complete `.ngdar/` directory — **full history**
+   - The session's files in their original directory tree
+4. Clears the staging index (ready for the next session)
 
-### 5. Deuxième session
+### 5. Second session
 
 ```bash
-ngdar add nouvelles-photos/
-ngdar pack --vol-id "DVD-002" --out archive_002.tar -m "Nouvelles photos"
+ngdar add new-photos/
+ngdar pack --vol-id "DVD-002" --out archive_002.tar -m "New photos"
 ```
 
-Le DVD-002 contient seulement les nouvelles photos, **mais** `.ngdar/` dans l'archive référence aussi tous les fichiers du DVD-001. Vous pouvez donc savoir depuis n'importe quelle archive où trouver chaque fichier.
+DVD-002 contains only the new photos, **but** the `.ngdar/` inside the archive also references every file from DVD-001. From any single archive you can tell exactly where every file lives.
 
-### 6. Consulter l'historique
+### 6. Browse history
 
 ```bash
-# Liste des commits
+# List all commits
 ngdar log
 
-# Contenu d'un commit spécifique
+# Inspect a specific commit
 ngdar log a1b2c3d4e5f6...
 ```
 
@@ -136,48 +132,48 @@ ngdar log a1b2c3d4e5f6...
 
 ## 🏗️ Architecture
 
-### Principes fondamentaux
+### Core principles
 
-1. **Content-Addressable Storage** — Chaque fichier est identifié par son hash BLAKE3. Le hash est calculé une fois et mis en cache dans `~/.cache/ngdar/<repo-id>/cache.tsv`.
+1. **Content-addressable storage** — Every file is identified by its BLAKE3 hash. The hash is computed once and cached in `~/.cache/ngdar/<repo-id>/cache.tsv`.
 
-2. **Métadonnées en texte clair** — Tout l'historique (commits, arborescences, métadonnées) est stocké dans des fichiers texte nommés par leur propre hash BLAKE3. Pas de base de données, pas de format propriétaire.
+2. **Plain-text metadata** — All history (commits, trees, file metadata) is stored as readable text files named by their own BLAKE3 hash. No database, no proprietary format.
 
-3. **Archives auto-suffisantes** — Chaque archive `.tar` contient **l'intégralité** de l'historique des métadonnées + **uniquement** les fichiers binaires changés pendant cette session. Une seule archive suffit pour connaître l'état complet du projet.
+3. **Self-contained archives** — Each `.tar` archive carries the **complete** metadata history plus **only** the binary files changed in that session. A single archive is enough to know the full state of the project.
 
-### Structure du dépôt
+### Repository structure
 
 ```
-.ngdar/                    # Métadonnées locales (pas de duplication des binaires)
-├── repository_id          # UUID v4 liant le projet au cache OS
-├── HEAD                   # Pointeur vers le dernier hash de commit
-├── index                  # Zone de staging (fichiers prêts pour le prochain pack)
-├── committed              # Liste des fichiers déjà archivés (hash + chemin)
-└── objects/               # Stockage content-addressed
-    ├── ab/                # 2 premiers caractères du hash = dossier
-    │   └── cd...          # Objet Meta, Tree ou Commit
+.ngdar/                    # Local metadata (no binary duplication)
+├── repository_id          # UUID v4 linking the project to its OS cache
+├── HEAD                   # Pointer to the latest commit hash
+├── index                  # Staging area (files ready for the next pack)
+├── committed              # List of already-archived files (hash + path)
+└── objects/               # Content-addressed object store
+    ├── ab/                # First 2 hash chars = directory
+    │   └── cd...          # Meta, Tree, or Commit object
     └── ...
 ```
 
-### Format des archives `.tar`
+### Archive format
 
 ```
 archive_001.tar
-├── .ngdar/                # Métadonnées complètes (toute l'historique)
+├── .ngdar/                # Full metadata (complete history)
 │   ├── repository_id
 │   ├── HEAD
 │   ├── index
 │   ├── committed
 │   └── objects/
 │       └── ...
-├── photos/                # Fichiers binaires (incrémentaux)
-│   └── plage.jpg
+├── photos/                # Binary files (incremental — this session only)
+│   └── beach.jpg
 └── videos/
-    └── anniversaire.mp4    # Seulement les fichiers de cette session
+    └── birthday.mp4
 ```
 
-### Modèle d'objets (tout en texte clair)
+### Object model (all plain text)
 
-**Meta** (un fichier)
+**Meta** (a single file)
 ```
 type meta
 size 4718592
@@ -185,40 +181,40 @@ mtime 1788118000
 permissions 644
 binary_hash a1b2c3d4e5f6...
 volume_id DVD-001
-path photos/vacances.jpg
+path photos/vacation.jpg
 ```
 
-**Tree** (un dossier)
+**Tree** (a directory)
 ```
 meta 81a44c7...  document.pdf
-tree e3b0c44...  sous-dossier
+tree e3b0c44...  subfolder
 ```
 
-**Commit** (un instantané)
+**Commit** (a snapshot)
 ```
 tree a1b2c3d...
 parent f6e5d4c...
-author utilisateur <user@host> 1788118091
+author user <user@host> 1788118091
 os Linux 6.6.0-x86_64
 tool_version ngdar-1.0.0
 
-Ajout des photos de vacances
+Added vacation photos
 ```
 
 ---
 
-## 📋 Référence des commandes
+## 📋 Command reference
 
-| Commande | Description |
+| Command | Description |
 |---|---|
-| `ngdar init` | Initialise un dépôt dans le répertoire courant |
-| `ngdar add <chemins>` | Ajoute des fichiers au staging |
-| `ngdar status` | Affiche l'état (staged, unstaged, untracked) |
-| `ngdar pack --vol-id <ID> --out <archive> -m <msg>` | Crée une archive TAR |
-| `ngdar log [hash]` | Liste les commits ou le contenu d'un commit |
-| `ngdar hash <fichier>` | Calcule le BLAKE3 hash d'un fichier |
-| `ngdar export <hash> --out <archive>` | Reconstruit une archive depuis les métadonnées |
-| `ngdar db-export <fichier.csv>` | Exporte toutes les métadonnées en CSV |
+| `ngdar init` | Initialize a repository in the current directory |
+| `ngdar add <paths>` | Stage files for the next archive |
+| `ngdar status` | Show staged, unstaged, and untracked files |
+| `ngdar pack --vol-id <ID> --out <archive> -m <msg>` | Create a TAR archive |
+| `ngdar log [hash]` | List commits or show files in a commit |
+| `ngdar hash <file>` | Compute and print a file's BLAKE3 hash |
+| `ngdar export <hash> --out <archive>` | Rebuild an archive from stored metadata |
+| `ngdar db-export <file.csv>` | Export all metadata to CSV |
 
 ---
 
@@ -226,7 +222,7 @@ Ajout des photos de vacances
 
 ### `.ngdarignore`
 
-Placez un fichier `.ngdarignore` à la racine du dépôt, avec les mêmes règles que `.gitignore` :
+Place a `.ngdarignore` file at the repository root using the same syntax as `.gitignore`:
 
 ```
 *.log
@@ -234,66 +230,66 @@ tmp/
 cache/
 ```
 
-### Cache système
+### System cache
 
-Le cache se trouve dans `~/.cache/ngdar/<repo-id>/cache.tsv` (format TSV : `taille\ttimestamp\thash\tchemin`). Si le cache est purgé par le système, NGDAR recalcule les hashs automatiquement.
+The cache lives at `~/.cache/ngdar/<repo-id>/cache.tsv` (TSV format: `size\ttimestamp\thash\tpath`). If the OS purges the cache, NGDAR transparently recomputes hashes.
 
 ---
 
-## 🛠️ Développement
+## 🛠️ Development
 
-### Compiler et tester
+### Build & test
 
 ```bash
-# Compilation optimisée
+# Optimized build
 cargo build --release
 
-# Exécuter tous les tests
+# Run all tests
 cargo test
 
-# Formatage et lint (comme en CI)
+# Formatting and lint (same as CI)
 cargo fmt --check
 cargo clippy -- -D warnings
 
-# Générer la documentation
+# Generate documentation
 RUSTDOCFLAGS="-D warnings" cargo doc --document-private-items
 ```
 
-### Hooks pré-commit
+### Pre-commit hooks
 
 ```bash
 pre-commit install
 ```
 
-Les hooks vérifient le formatage, interdisent certains patterns, et exécutent la CI complète avant de pousser.
+Hooks check formatting, forbid certain patterns, and run the full CI suite before pushing.
 
 ---
 
-## 🤝 Contribuer
+## 🤝 Contributing
 
-Les contributions sont les bienvenues ! Voici la marche à suivre :
+Contributions are welcome! Here's how:
 
-1. **Fork** le projet
-2. Crée une branche : `git checkout -b ma-feature`
-3. **Commit** tes changements
-4. **Push** : `git push origin ma-feature`
-5. Ouvre une **Pull Request** vers `master`
+1. **Fork** the project
+2. Create a branch: `git checkout -b my-feature`
+3. **Commit** your changes
+4. **Push**: `git push origin my-feature`
+5. Open a **Pull Request** against `master`
 
-Merci de suivre ces bonnes pratiques :
-- PR courtes et ciblées (une seule responsabilité)
-- Messages de commit clairs et conventionnels
-- Tests inclus pour chaque nouvelle fonctionnalité
+Please keep these practices in mind:
+- Keep PRs short and focused (one responsibility per PR)
+- Use clear, conventional commit messages
+- Include tests for every new feature
 
 ---
 
-## 📄 Licence
+## 📄 License
 
-Distribué sous licence **MIT**. Voir le fichier `LICENSE` pour plus d'informations.
+Distributed under the **MIT** license. See the `LICENSE` file for details.
 
 ---
 
 <div align="center">
 
-**NGDAR** — *Parce que vos archives méritent mieux qu'un tas de fichiers éparpillés sur des DVD sans index.*
+**NGDAR** — *Because your archives deserve better than a pile of files scattered across unindexed discs.*
 
 </div>
