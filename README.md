@@ -1,143 +1,287 @@
-# NGDAR — New Generation Disk Archiving
+<div align="center">
+
+<img src="ngdar-banner.jpg" alt="NGDAR — New Generation Disk Archiving" width="600">
+
+**Git-like incremental archiving for massive binary files on optical media**
 
 [![CI](https://github.com/XavierTolza/ngdar/actions/workflows/ci.yml/badge.svg)](https://github.com/XavierTolza/ngdar/actions/workflows/ci.yml)
-[![Documentation](https://img.shields.io/badge/docs-100%25-brightgreen)](https://github.com/XavierTolza/ngdar#readme)
+[![Rust](https://img.shields.io/badge/rust-1.70%2B-orange)](https://www.rust-lang.org)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://opensource.org/licenses/MIT)
 
-**NGDAR** is a Git-like incremental archiving tool for massive binary files. It produces standard `.tar` archives suitable for long-term cold storage (DVD, LTO tape, cloud). Unlike traditional backup tools, NGDAR tracks file history through content-addressed metadata, making it possible to know exactly which volume a file was written to — even decades later, with nothing more than a plain text editor.
+</div>
 
-## Architecture
+---
 
-NGDAR is built on three principles:
+**NGDAR** lets you archive large files onto optical discs (DVD, Blu-ray) or LTO tapes the same way you manage code with Git.
 
-1. **Content-Addressable Storage** — Every file is identified by its BLAKE3 hash. The hash is computed once and cached in `~/.cache/ngdar/<repo-id>/cache.tsv` for fast subsequent runs.
-2. **Plain-text metadata** — All history (commits, trees, file metadata) is stored as readable text files named by their own BLAKE3 hash. No database, no proprietary format.
-3. **Self-contained archives** — Each `.tar` archive includes the *complete* metadata history plus *only the binary files changed in this session*. Any single archive tells you everything about the project.
+Each `.tar` archive it produces contains the **complete history** of your data plus **only the files that changed** since the last session. No more burning everything from scratch every time — a quick look at the plain-text metadata tells you exactly which volume holds which file.
 
-## Repository Structure
+> **Typical use case**: you have 50 GB of photos, videos, or documents to back up across 4.7 GB DVDs. NGDAR splits the work into incremental sessions, and each DVD carries the new files **plus** the full index of everything you've ever archived.
 
-```
-.ngdar/              # Local metadata (no binary duplication)
-├── repository_id    # UUID v4 linking project to its OS cache
-├── HEAD             # Pointer to the latest commit hash
-├── index            # Staging area (files ready for next pack)
-└── objects/         # Content-addressed object store
-    ├── ab/          # First 2 chars of hash = directory
-    │   └── cd...    # Meta, Tree, or Commit object
-    └── ...
-```
+---
 
-## Object Model (Plain Text)
+## ✨ Features
 
-All objects are human-readable text files:
+- **Incremental archiving** — Only new or changed files go into each archive
+- **Plain-text metadata** — No proprietary database. A simple `cat` is all you need to read the entire history
+- **No vendor lock-in** — Your data never depends on a closed format or a specific tool
+- **Content-addressable storage** — Every file is identified by its BLAKE3 hash (automatic deduplication)
+- **Free-form volume IDs** — Name your volumes however you like (`DVD-001`, `LTO-2026-08`, …)
+- **OS-level cache** — Hashes cached in `~/.cache/ngdar/` for near-instant subsequent runs
+- **`.ngdarignore`** — Exclude temp files, logs, and other artifacts
+- **Standard `.tar` output** — Archives can be extracted with any tar-compatible tool
+- **CSV export** — Dump your entire metadata database for inventory purposes
 
-### Meta Object
-```
-type meta
-size 1048576
-mtime 1788118000
-permissions 644
-binary_hash a1b2c3d4e5f6...
-volume_id DVD-001
-```
+---
 
-### Tree Object
-```
-tree e3b0c442... sub_dir
-meta 81a44c7...  document.pdf
-```
+## 🚀 Installation
 
-### Commit Object
-```
-tree <root-tree-hash>
-parent <parent-commit-hash>
-author Xavier <xavier@example.com> 1788118091
-os Linux 6.6.0-x86_64
-tool_version ngdar-1.0.0
+### Prerequisites
 
-Descriptive commit message.
-```
+- [Rust](https://www.rust-lang.org) 1.70 or newer
+- Linux, macOS (or Windows with a Unix environment)
 
-## CLI Commands
-
-### `ngdar init`
-Initialize a new repository in the current directory.
+### From source
 
 ```bash
-cd /path/to/data/
+git clone https://github.com/XavierTolza/ngdar.git
+cd ngdar
+
+cargo build --release
+cp target/release/ngdar ~/.local/bin/    # or anywhere in your PATH
+
+ngdar --version
+```
+
+### Via `cargo install`
+
+```bash
+cargo install --git https://github.com/XavierTolza/ngdar.git
+```
+
+---
+
+## 📖 Step-by-step guide
+
+### 1. Initialize a repository
+
+```bash
+cd /path/to/my/data/
 ngdar init
 ```
 
-### `ngdar add <paths>`
-Stage files for the next archive. Files are hashed (BLAKE3) and registered in the staging index. Supports `.ngdarignore` files for exclusions.
+A hidden `.ngdar/` directory is created. It will hold all metadata (never the binary files themselves).
+
+### 2. Add files
 
 ```bash
-ngdar add documents/ photos/
-ngdar add config.json
+ngdar add photos/ videos/ documents/
+ngdar add final-report.pdf
 ```
 
-### `ngdar status`
-Show the repository state in three categories:
-- **Staged** — ready to be packed (diff between HEAD and index)
-- **Unstaged** — changed on disk but not staged (verified via OS cache)
-- **Untracked** — files not yet tracked (respects `.ngdarignore`)
+NGDAR computes the BLAKE3 hash of each file and adds it to the staging area (the index). Files that are already archived unchanged are detected and skipped.
+
+### 3. Check status
 
 ```bash
 ngdar status
 ```
 
-### `ngdar pack --vol-id <ID> --out <archive.tar> -m "<message>"`
-Create a TAR archive from staged files. This command:
-1. Creates **Meta** objects with the volume ID (e.g., `DVD-001`)
+Three categories are shown:
+
+| State | Description |
+|---|---|
+| ✅ **Staged** | Ready to be packed |
+| 🔶 **Unstaged** | Modified on disk but not re-staged |
+| ❓ **Untracked** | New file not yet tracked |
+
+### 4. Create an archive
+
+```bash
+ngdar pack --vol-id "DVD-001" --out archive_001.tar -m "First archival session"
+```
+
+This command:
+1. Creates **Meta** objects (size, date, permissions, hash, volume ID)
 2. Builds **Tree** and **Commit** objects
 3. Generates a `.tar` containing:
-   - The **full `.ngdar/`** metadata directory (complete project history)
-   - A **`data/`** folder with the actual binary files from this session
-4. Clears the staging index
+   - The complete `.ngdar/` directory — **full history**
+   - The session's files in their original directory tree
+4. Clears the staging index (ready for the next session)
+
+### 5. Second session
 
 ```bash
-ngdar pack --vol-id "ARCHIVE-2026-08" --out session_001.tar -m "Added administrative records"
+ngdar add new-photos/
+ngdar pack --vol-id "DVD-002" --out archive_002.tar -m "New photos"
 ```
 
-## Archive Format
+DVD-002 contains only the new photos, **but** the `.ngdar/` inside the archive also references every file from DVD-001. From any single archive you can tell exactly where every file lives.
 
-The output `.tar` archive has two top-level directories:
-
-```
-.ngdar/              # Complete metadata history
-├── repository_id
-├── HEAD
-├── index
-└── objects/
-    ├── ...
-data/                # Incremental binary files
-├── documents/
-│   └── report.pdf
-├── photos/
-│   └── image.jpg
-└── ...
-```
-
-This means: given *any single archive*, you can see every file ever tracked and know which volume holds each binary.
-
-## Cache System
-
-NGDAR uses the XDG Base Directory for an OS-level cache:
-
-```
-~/.cache/ngdar/<repository_id>/cache.tsv
-```
-
-Format: `[size] [mtime] [blake3_hash] [relative_path]`
-
-If `size` and `mtime` match a cached entry, the BLAKE3 hash is reused without reading the file. If the OS purges the cache, NGDAR transparently recomputes hashes.
-
-## Building
+### 6. Browse history
 
 ```bash
+# List all commits
+ngdar log
+
+# Inspect a specific commit
+ngdar log a1b2c3d4e5f6...
+```
+
+---
+
+## 🏗️ Architecture
+
+### Core principles
+
+1. **Content-addressable storage** — Every file is identified by its BLAKE3 hash. The hash is computed once and cached in `~/.cache/ngdar/<repo-id>/cache.tsv`.
+
+2. **Plain-text metadata** — All history (commits, trees, file metadata) is stored as readable text files named by their own BLAKE3 hash. No database, no proprietary format.
+
+3. **Self-contained archives** — Each `.tar` archive carries the **complete** metadata history plus **only** the binary files changed in that session. This makes it easy to keep track of which disk each file was stored on: any single archive is enough to know exactly where every file lives.
+
+### Repository structure
+
+```
+.ngdar/                    # Local metadata (no binary duplication)
+├── repository_id          # UUID v4 linking the project to its OS cache
+├── HEAD                   # Pointer to the latest commit hash
+├── index                  # Staging area (files ready for the next pack)
+├── committed              # List of already-archived files (hash + path)
+└── objects/               # Content-addressed object store
+    ├── ab/                # First 2 hash chars = directory
+    │   └── cd...          # Meta, Tree, or Commit object
+    └── ...
+```
+
+### Archive format
+
+```
+archive_001.tar
+├── .ngdar/                # Full metadata (complete history)
+│   ├── repository_id
+│   ├── HEAD
+│   ├── index
+│   ├── committed
+│   └── objects/
+│       └── ...
+├── photos/                # Binary files (incremental — this session only)
+│   └── beach.jpg
+└── videos/
+    └── birthday.mp4
+```
+
+### Object model (all plain text)
+
+**Meta** (a single file)
+```
+type meta
+size 4718592
+mtime 1788118000
+permissions 644
+binary_hash a1b2c3d4e5f6...
+volume_id DVD-001
+path photos/vacation.jpg
+```
+
+**Tree** (a directory)
+```
+meta 81a44c7...  document.pdf
+tree e3b0c44...  subfolder
+```
+
+**Commit** (a snapshot)
+```
+tree a1b2c3d...
+parent f6e5d4c...
+author user <user@host> 1788118091
+os Linux 6.6.0-x86_64
+tool_version ngdar-1.0.0
+
+Added vacation photos
+```
+
+---
+
+## 📋 Command reference
+
+| Command | Description |
+|---|---|
+| `ngdar init` | Initialize a repository in the current directory |
+| `ngdar add <paths>` | Stage files for the next archive |
+| `ngdar status` | Show staged, unstaged, and untracked files |
+| `ngdar pack --vol-id <ID> --out <archive> -m <msg>` | Create a TAR archive |
+| `ngdar log [hash]` | List commits or show files in a commit |
+| `ngdar hash <file>` | Compute and print a file's BLAKE3 hash |
+| `ngdar export <hash> --out <archive>` | Rebuild an archive from stored metadata |
+| `ngdar db-export <file.csv>` | Export all metadata to CSV |
+
+---
+
+## ⚙️ Configuration
+
+### `.ngdarignore`
+
+Place a `.ngdarignore` file at the repository root using the same syntax as `.gitignore`:
+
+```
+*.log
+tmp/
+cache/
+```
+
+### System cache
+
+The cache lives at `~/.cache/ngdar/<repo-id>/cache.tsv` (TSV format: `size\ttimestamp\thash\tpath`). If the OS purges the cache, NGDAR transparently recomputes hashes.
+
+---
+
+## 🛠️ Development
+
+### Build & test
+
+```bash
+# Optimized build
 cargo build --release
+
+# Run all tests
 cargo test
+
+# Formatting and lint (same as CI)
+cargo fmt --check
+cargo clippy -- -D warnings
+
+# Generate documentation
+RUSTDOCFLAGS="-D warnings" cargo doc --document-private-items
 ```
 
-## License
+### Pre-commit hooks
 
-MIT
+```bash
+pre-commit install
+```
+
+Hooks check formatting, forbid certain patterns, and run the full CI suite before pushing.
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Here's how:
+
+1. **Fork** the project
+2. Create a branch: `git checkout -b my-feature`
+3. **Commit** your changes
+4. **Push**: `git push origin my-feature`
+5. Open a **Pull Request** against `master`
+
+Please keep these practices in mind:
+- Keep PRs short and focused (one responsibility per PR)
+- Use clear, conventional commit messages
+- Include tests for every new feature
+
+---
+
+## 📄 License
+
+Distributed under the **MIT** license. See the `LICENSE` file for details.
