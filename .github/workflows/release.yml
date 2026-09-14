@@ -1,0 +1,226 @@
+name: Release
+
+# ─────────────────────────────────────────────────────────────────────
+# The one-click release button.
+#
+# Go to the "Actions" tab → "Release" → "Run workflow", type the version
+# (e.g. 1.2.0) and pick the branch to release from (default: develop).
+# Everything else is automatic:
+#
+#   1. Bumps the version on a `release/vX.Y.Z` branch off the source
+#      branch and opens a Pull Request into `master`.
+#   2. Runs the full CI on that release branch.
+#   3. Merges the PR into `master` (only if CI passed).
+#   4. Tags `master` with `vX.Y.Z`.
+#   5. Builds & publishes the GitHub Release (cross-platform binaries,
+#      .deb / .rpm packages).
+#
+# The whole chain runs inside a single workflow run on purpose: events
+# created with the default GITHUB_TOKEN (tag pushed, PR opened/merged) do
+# not re-trigger other workflows (GitHub's anti-recursion rule), so we
+# drive every step explicitly by calling the reusable CI/Build workflows
+# instead of chaining on events.
+# ─────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (semver without 'v'), e.g. 1.2.0 or 1.2.0-rc.1"
+        required: true
+        type: string
+      source_branch:
+        description: "Branch to release from"
+        required: true
+        default: develop
+        type: string
+
+# Never run two releases at the same time.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: read
+
+jobs:
+  # ───────────────────────────────────────────────
+  # 1. Create the release branch + pull request
+  # ───────────────────────────────────────────────
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+      branch: ${{ steps.bump.outputs.branch }}
+      pr: ${{ steps.pr.outputs.pr }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Validate inputs
+        env:
+          VERSION: ${{ inputs.version }}
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z._-]+)?(\+[0-9A-Za-z._-]+)?$'; then
+            echo "::error::Invalid version '$VERSION'. Expected semver like 1.2.0 or 1.2.0-rc.1"
+            exit 1
+          fi
+          if ! git ls-remote --exit-code --heads origin "$SOURCE_BRANCH" >/dev/null 2>&1; then
+            echo "::error::Source branch '$SOURCE_BRANCH' does not exist on origin."
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "v$VERSION" >/dev/null 2>&1; then
+            echo "::error::Tag v$VERSION already exists. Pick another version."
+            exit 1
+          fi
+          echo "Inputs OK: version=$VERSION source_branch=$SOURCE_BRANCH"
+
+      - name: Create release branch and bump version
+        id: bump
+        env:
+          VERSION: ${{ inputs.version }}
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+        run: |
+          set -euo pipefail
+          BRANCH="release/v$VERSION"
+          git checkout -B "$BRANCH" "origin/$SOURCE_BRANCH"
+
+          # Cargo.toml is the single source of truth for the version.
+          sed -i "0,/^version = \".*\"/s//version = \"$VERSION\"/" Cargo.toml
+          # Refresh the lockfile so `--locked` builds stay consistent.
+          cargo update -p ngdar --precise "$VERSION"
+
+          git add Cargo.toml Cargo.lock
+          git -c user.name="github-actions[bot]" \
+              -c user.email="github-actions[bot]@users.noreply.github.com" \
+              commit -m "Release v$VERSION"
+          # The branch is unique per version, so forcing is safe on re-runs.
+          git push --force origin "$BRANCH"
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+
+      - name: Open pull request
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.bump.outputs.version }}
+          BRANCH: ${{ steps.bump.outputs.branch }}
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+        run: |
+          set -euo pipefail
+          gh label create release --color 0E8A16 \
+            --description "Automated release pull request" >/dev/null 2>&1 || true
+
+          BODY=$(cat <<EOF
+          ## Release v$VERSION
+
+          Merges \`$SOURCE_BRANCH\` into \`master\` to prepare **v$VERSION**.
+
+          - **Version:** \`$VERSION\`
+          - **Source branch:** \`$SOURCE_BRANCH\`
+
+          This PR is merged automatically once the required checks are green.
+          Merging tags \`master\` with \`v$VERSION\` and starts the build/release pipeline.
+          EOF
+          )
+
+          # Reuse the existing PR if one is already open for this branch.
+          PR=$(gh pr list --head "$BRANCH" --base master --state open \
+                 --json number --jq '.[0].number')
+          if [ -z "$PR" ] || [ "$PR" = "null" ]; then
+            gh pr create --base master --head "$BRANCH" \
+              --title "Release v$VERSION" --body "$BODY" --label release
+            PR=$(gh pr list --head "$BRANCH" --base master --state open \
+                   --json number --jq '.[0].number')
+          fi
+          echo "pr=$PR" >> "$GITHUB_OUTPUT"
+          echo "Opened/updated PR #$PR"
+
+          # Best-effort native auto-merge; the merge job below is the real driver.
+          gh pr merge "$PR" --squash --auto \
+            || echo "::notice::Native auto-merge unavailable; the merge job will merge PR #$PR."
+
+  # ───────────────────────────────────────────────
+  # 2. Validate the release branch (CI)
+  # ───────────────────────────────────────────────
+  ci:
+    needs: prepare
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.prepare.outputs.branch }}
+
+  # ───────────────────────────────────────────────
+  # 3. Merge into master
+  # ───────────────────────────────────────────────
+  merge:
+    needs: [prepare, ci]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Merge the release pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ needs.prepare.outputs.pr }}
+        run: |
+          set -euo pipefail
+          STATE=$(gh pr view "$PR" --json state --jq '.state')
+          if [ "$STATE" = "MERGED" ]; then
+            echo "PR #$PR already merged."
+            exit 0
+          fi
+          gh pr merge "$PR" --squash
+          echo "PR #$PR merged into master."
+
+  # ───────────────────────────────────────────────
+  # 4. Tag master
+  # ───────────────────────────────────────────────
+  tag:
+    needs: [prepare, merge]
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - name: Checkout master
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - name: Create and push tag
+        id: tag
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          TAG="v$VERSION"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if git ls-remote --exit-code --tags origin "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists — skipping."
+          else
+            git tag -a "$TAG" -m "Release $TAG"
+            git push origin "$TAG"
+            echo "Pushed tag $TAG"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+  # ───────────────────────────────────────────────
+  # 5. Build & publish the release
+  # ───────────────────────────────────────────────
+  build:
+    needs: tag
+    uses: ./.github/workflows/release-build.yml
+    with:
+      tag: ${{ needs.tag.outputs.tag }}
+    permissions:
+      contents: write

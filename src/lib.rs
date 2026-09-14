@@ -1,6 +1,18 @@
 //! Library crate for NGDAR — enables integration tests to access public APIs.
 #![warn(missing_docs)]
 
+use std::path::Path;
+
+/// Converts a filesystem path to a string using `/` as the separator.
+///
+/// Repository paths (index entries, tree names, archive members) are stored
+/// with forward slashes so an archive written on Windows stays readable on
+/// Linux/macOS and vice-versa.
+pub fn path_to_slash(path: &Path) -> String {
+    path.to_string_lossy()
+        .replace(std::path::MAIN_SEPARATOR, "/")
+}
+
 /// Cache subsystem: TSV-based fingerprint cache (size, mtime, hash).
 pub mod cache;
 /// CLI argument parsing and subcommand dispatch.

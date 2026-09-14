@@ -75,7 +75,7 @@ fn add_dir_to_tar(
             .path()
             .strip_prefix(base)
             .map_err(|_| NgdarError::Other("Path error in tar".into()))?;
-        let tar_path = format!("{}/{}", tar_prefix, relative.to_str().unwrap_or(""));
+        let tar_path = format!("{}/{}", tar_prefix, crate::path_to_slash(relative));
 
         if entry.file_type().is_dir() {
             // Tar format: add directory entry

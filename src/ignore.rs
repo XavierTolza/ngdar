@@ -104,19 +104,19 @@ pub fn list_untracked(root: &Path, tracked: &[String]) -> Result<Vec<String>, Ng
         if entry.file_type().is_dir() {
             continue;
         }
-        let rel_path = entry
-            .path()
-            .strip_prefix(root)
-            .map_err(|_| NgdarError::Other("Path prefix error".into()))?
-            .to_str()
-            .unwrap_or("");
+        let rel_path = crate::path_to_slash(
+            entry
+                .path()
+                .strip_prefix(root)
+                .map_err(|_| NgdarError::Other("Path prefix error".into()))?,
+        );
         if rel_path.is_empty() {
             continue;
         }
-        if ignore_rules.is_ignored(rel_path) {
+        if ignore_rules.is_ignored(&rel_path) {
             continue;
         }
-        if tracked.contains(&rel_path.to_string()) {
+        if tracked.contains(&rel_path) {
             continue;
         }
         untracked.push(rel_path.to_string());

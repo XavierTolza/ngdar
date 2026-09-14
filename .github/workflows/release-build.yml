@@ -1,0 +1,212 @@
+name: Release — Build
+
+# Build & publish step of the release pipeline. Normally invoked by the
+# "Release" orchestrator (.github/workflows/release.yml) through
+# `workflow_call`, once the release PR is merged and master is tagged.
+# It can also run standalone if you push a `v*` tag manually.
+#
+# Compiles the crate for a broad matrix of targets (Linux gnu/musl on
+# x86_64/aarch64/armv7, macOS Intel/Apple Silicon, Windows), packages
+# each binary as a tar.gz or zip, also builds .deb and .rpm on Linux,
+# and publishes everything as a GitHub Release with generated notes.
+
+on:
+  # Kept so a hand-pushed tag (or a tag made with a PAT) also builds.
+  push:
+    tags: ["v*"]
+  # Manual re-run / back-fill from the web UI.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build and publish (e.g. v1.2.0)"
+        required: true
+        type: string
+  # Called by "Release — Tag" so the pipeline runs even when the tag was
+  # pushed with GITHUB_TOKEN (which does not re-trigger `push` workflows).
+  workflow_call:
+    inputs:
+      tag:
+        description: "Tag to build and publish (e.g. v1.2.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  # The pushed tag, or the tag passed by a dispatch / reusable call.
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  # ───────────────────────────────────────────────
+  # Cross-compiled binaries → tar.gz / zip archives
+  # ───────────────────────────────────────────────
+  binaries:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-gnu,      os: ubuntu-latest }
+          - { target: x86_64-unknown-linux-musl,     os: ubuntu-latest }
+          - { target: aarch64-unknown-linux-gnu,     os: ubuntu-latest }
+          - { target: aarch64-unknown-linux-musl,    os: ubuntu-latest }
+          - { target: armv7-unknown-linux-gnueabihf, os: ubuntu-latest }
+          - { target: x86_64-apple-darwin,           os: macos-15-intel }
+          - { target: aarch64-apple-darwin,          os: macos-14 }
+          - { target: x86_64-pc-windows-msvc,        os: windows-latest }
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      # Linux: cross-compile (handles gnu/musl/aarch64/armv7 toolchains).
+      - name: Build (Linux, cross)
+        if: runner.os == 'Linux'
+        uses: houseabsolute/actions-rust-cross@v0
+        with:
+          target: ${{ matrix.target }}
+          command: build
+          args: "--release --locked"
+
+      # macOS / Windows: native toolchain with the target installed.
+      - name: Install Rust toolchain
+        if: runner.os != 'Linux'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build (macOS / Windows)
+        if: runner.os != 'Linux'
+        shell: bash
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Package archive (unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${RELEASE_TAG#v}"
+          STAGE="ngdar-${VERSION}-${{ matrix.target }}"
+          mkdir -p "dist/$STAGE"
+          cp "target/${{ matrix.target }}/release/ngdar" "dist/$STAGE/"
+          cp README.md Cargo.toml "dist/$STAGE/" 2>/dev/null || true
+          tar -C dist -czf "dist/${STAGE}.tar.gz" "$STAGE"
+          echo "Created dist/${STAGE}.tar.gz"
+
+      - name: Package archive (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = $env:RELEASE_TAG -replace '^v',''
+          $stage = "ngdar-$version-${{ matrix.target }}"
+          New-Item -ItemType Directory -Force -Path "dist/$stage" | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/ngdar.exe" "dist/$stage/"
+          Copy-Item "README.md" "dist/$stage/" -ErrorAction SilentlyContinue
+          Compress-Archive -Path "dist/$stage" -DestinationPath "dist/$stage.zip"
+          Write-Host "Created dist/$stage.zip"
+
+      - name: Upload archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: archive-${{ matrix.target }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+          if-no-files-found: error
+          overwrite: true
+
+  # ───────────────────────────────────────────────
+  # Native Linux packages (.deb / .rpm)
+  # ───────────────────────────────────────────────
+  linux-packages:
+    name: pkg ${{ matrix.arch }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest,    arch: x86_64 }
+          - { os: ubuntu-24.04-arm, arch: aarch64 }
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install packaging tools
+        run: |
+          cargo install cargo-deb --locked
+          cargo install cargo-generate-rpm --locked
+
+      - name: Build release binary
+        run: cargo build --release --locked
+
+      - name: Build .deb and .rpm
+        # Best-effort: a missing packager must not fail the whole release.
+        continue-on-error: true
+        run: |
+          mkdir -p target/deb target/rpm
+          cargo deb --no-build -o target/deb
+          cargo generate-rpm -o target/rpm
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-${{ matrix.arch }}
+          path: |
+            target/deb/*.deb
+            target/rpm/*.rpm
+          if-no-files-found: warn
+          overwrite: true
+
+  # ───────────────────────────────────────────────
+  # Publish the GitHub Release
+  # ───────────────────────────────────────────────
+  publish:
+    name: publish release
+    needs: [binaries, linux-packages]
+    runs-on: ubuntu-latest
+    # Publish whenever the binaries succeeded; Linux packages are best-effort.
+    if: always() && needs.binaries.result == 'success'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Show collected files
+        run: find dist -type f | sort
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          PRERELEASE_FLAG=""
+          case "$RELEASE_TAG" in
+            *-*) PRERELEASE_FLAG="--prerelease" ;;
+          esac
+
+          # Collect every produced file (archives, .deb, .rpm) at any depth.
+          mapfile -t FILES < <(find dist -type f | sort)
+          printf 'Publishing %d file(s):\n' "${#FILES[@]}"
+          printf '  %s\n' "${FILES[@]}"
+
+          gh release create "$RELEASE_TAG" "${FILES[@]}" \
+            --title "ngdar $RELEASE_TAG" \
+            --generate-notes \
+            $PRERELEASE_FLAG
