@@ -29,17 +29,15 @@ fn os_string() -> String {
     format!("{} {}", os, arch)
 }
 
-fn format_permissions(mode: &std::fs::Metadata) -> u32 {
-    // Use the lower 9 bits plus setuid/setuid/sticky
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        mode.permissions().mode() & 0o777
-    }
-    #[cfg(not(unix))]
-    {
-        0o644
-    }
+#[cfg(unix)]
+fn format_permissions(metadata: &std::fs::Metadata) -> u32 {
+    use std::os::unix::fs::PermissionsExt;
+    metadata.permissions().mode() & 0o777
+}
+
+#[cfg(not(unix))]
+fn format_permissions(_metadata: &std::fs::Metadata) -> u32 {
+    0o644
 }
 
 fn get_mtime(metadata: &std::fs::Metadata) -> i64 {
