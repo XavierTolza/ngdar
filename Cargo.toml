@@ -1,6 +1,6 @@
 [package]
 name = "ngdar"
-version = "1.0.0"
+version = "0.0.0"
 edition = "2021"
 description = "New Generation Disk Archiving - Git-like incremental archiving for massive binary files"
 authors = ["Xavier <xavier@example.com>"]
