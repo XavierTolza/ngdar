@@ -13,7 +13,7 @@ name = "ngdar"
 path = "src/main.rs"
 
 [package.metadata.deb]
-maintainer = "Xavier <xavier@example.com>"
+maintainer = "Xavier"
 copyright = "2026, Xavier"
 license-file = ["LICENSE", "0"]
 depends = "$auto"
