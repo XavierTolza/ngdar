@@ -3,32 +3,18 @@
 /// so that extracting an archive and running `ngdar status` does not show
 /// committed files as "Staged".
 mod common;
+#[path = "common/setup.rs"]
+mod setup;
 
 use std::path::Path;
 use std::process::Command;
 
-/// Helper: add all standard files and pack into a tar, returning the tar path.
+/// Helper: add all standard files, commit them, and pack into a tar,
+/// returning the tar path.
 fn pack_all(root: &Path, vol_id: &str) -> std::path::PathBuf {
     common::run_ngdar(root, &["add", "README.txt", "docs/note.txt", "large.bin"]).unwrap();
-    let tar_path = root.join(format!("session_{}.tar", vol_id));
-    let out = common::run_ngdar(
-        root,
-        &[
-            "pack",
-            "--vol-id",
-            vol_id,
-            "--out",
-            tar_path.to_str().unwrap(),
-            "-m",
-            "test",
-        ],
-    )
-    .unwrap();
-    assert!(
-        out.contains("Created archive"),
-        "pack should confirm creation: {out}"
-    );
-    tar_path
+    let commit_hash = common::commit(root, vol_id, "test");
+    common::pack(root, &commit_hash, &format!("session_{}.tar", vol_id))
 }
 
 /// Helper: extract a tar archive into a subdirectory and return the path.
@@ -46,10 +32,10 @@ fn extract_tar(root: &Path, tar_path: &Path, name: &str) -> std::path::PathBuf {
 
 #[test]
 fn pack_archive_index_is_empty_after_extraction() {
-    // This test reproduces the bug where `.ngdar/index` inside the TAR archive
-    // still contained staged files, causing `ngdar status` to show committed
-    // files as "Staged" after extraction.
-    let (_dir, root) = setup_repo();
+    // The `.ngdar/index` embedded in an archive must reflect the post-commit
+    // state (empty staging area), otherwise `ngdar status` on an extracted
+    // archive would show committed files as "Staged".
+    let (_dir, root) = setup::setup_repo();
 
     let tar_path = pack_all(&root, "DVD-001");
     let extract_dir = extract_tar(&root, &tar_path, "extract");
@@ -68,18 +54,4 @@ fn pack_archive_index_is_empty_after_extraction() {
         out.contains("(nothing staged)"),
         "After extraction, status should show nothing staged: {out}"
     );
-}
-
-fn setup_repo() -> (tempfile::TempDir, std::path::PathBuf) {
-    let dir = tempfile::TempDir::new().unwrap();
-    let root = dir.path().to_path_buf();
-
-    std::fs::create_dir_all(root.join("docs")).unwrap();
-    std::fs::write(root.join("README.txt"), "ngdar test project").unwrap();
-    std::fs::write(root.join("docs/note.txt"), "incremental backup test").unwrap();
-    std::fs::write(root.join("large.bin"), vec![0xABu8; 1024]).unwrap();
-
-    common::run_ngdar(&root, &["init"]).unwrap();
-
-    (dir, root)
 }

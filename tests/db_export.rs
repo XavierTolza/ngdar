@@ -9,27 +9,14 @@ mod common;
 fn test_db_export() {
     let dir = tempfile::TempDir::new().unwrap();
     let root = dir.path().to_path_buf();
-    let tmp = tempfile::TempDir::new().unwrap();
 
     // Create a test file and run the full workflow
     std::fs::write(root.join("data.bin"), "binary data for export test").unwrap();
     common::run_ngdar(&root, &["init"]).unwrap();
     common::run_ngdar(&root, &["add", "data.bin"]).unwrap();
 
-    let tar_path = tmp.path().join("archive.tar");
-    common::run_ngdar(
-        &root,
-        &[
-            "pack",
-            "--vol-id",
-            "DVD-EXPORT",
-            "--out",
-            tar_path.to_str().unwrap(),
-            "-m",
-            "Export test",
-        ],
-    )
-    .unwrap();
+    let commit_hash = common::commit(&root, "DVD-EXPORT", "Export test");
+    let _tar = common::pack(&root, &commit_hash, "archive.tar");
 
     // Export the database
     let csv_path = root.join("export.csv");

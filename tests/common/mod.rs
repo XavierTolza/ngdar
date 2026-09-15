@@ -1,4 +1,7 @@
-use std::path::Path;
+//! Shared helpers for integration tests.
+#![allow(dead_code)]
+
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// Run `ngdar <args>` in `dir` and return stdout on success.
@@ -21,6 +24,24 @@ pub fn run_ngdar(dir: &Path, args: &[&str]) -> Result<String, String> {
     }
 
     Ok(stdout)
+}
+
+/// Run `ngdar commit --vol-id <vol_id> -m <msg>` and return the commit hash.
+pub fn commit(dir: &Path, vol_id: &str, msg: &str) -> String {
+    let out = run_ngdar(dir, &["commit", "--vol-id", vol_id, "-m", msg]).unwrap();
+    out.lines()
+        .find_map(|l| l.strip_prefix("Commit: "))
+        .expect("commit output should contain a 'Commit: <hash>' line")
+        .trim()
+        .to_string()
+}
+
+/// Run `ngdar pack <target> --out <file>` and return the created tar path.
+pub fn pack(dir: &Path, target: &str, out_name: &str) -> PathBuf {
+    let tar_path = dir.join(out_name);
+    let out = run_ngdar(dir, &["pack", target, "--out", tar_path.to_str().unwrap()]).unwrap();
+    assert!(out.contains("Created archive"), "pack output: {out}");
+    tar_path
 }
 
 /// Extract a tar archive into a subdirectory and return the path.

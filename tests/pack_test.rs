@@ -1,32 +1,16 @@
-/// Tests for `ngdar pack` — archive creation and TAR contents.
+/// Tests for `ngdar pack <target>` — archive creation and TAR contents.
 mod common;
 #[path = "common/setup.rs"]
 mod setup;
 
 use std::path::Path;
 
-/// Helper: add all standard files and pack into a tar, returning the tar path.
+/// Helper: add all standard files, commit them, and pack into a tar,
+/// returning the tar path.
 fn pack_all(root: &Path, vol_id: &str) -> std::path::PathBuf {
     common::run_ngdar(root, &["add", "README.txt", "docs/note.txt", "large.bin"]).unwrap();
-    let tar_path = root.join(format!("session_{}.tar", vol_id));
-    let out = common::run_ngdar(
-        root,
-        &[
-            "pack",
-            "--vol-id",
-            vol_id,
-            "--out",
-            tar_path.to_str().unwrap(),
-            "-m",
-            "test",
-        ],
-    )
-    .unwrap();
-    assert!(
-        out.contains("Created archive"),
-        "pack should confirm creation: {out}"
-    );
-    tar_path
+    let commit_hash = common::commit(root, vol_id, "test");
+    common::pack(root, &commit_hash, &format!("session_{}.tar", vol_id))
 }
 
 #[test]
@@ -95,30 +79,16 @@ fn pack_objects_are_plain_text_meta_with_volume_id() {
     assert!(has_meta, "Should contain at least one Meta object");
 }
 
+/// Packing by volume ID resolves to the commit that produced that volume.
 #[test]
-fn pack_error_with_empty_index() {
+fn pack_accepts_volume_id() {
     let (_dir, root) = setup::setup_repo();
+    common::run_ngdar(&root, &["add", "README.txt", "docs/note.txt", "large.bin"]).unwrap();
+    common::commit(&root, "DVD-VOL", "test");
 
-    let tar_path = root.join("session_DVD-001.tar");
-    let result = common::run_ngdar(
-        &root,
-        &[
-            "pack",
-            "--vol-id",
-            "DVD-001",
-            "--out",
-            tar_path.to_str().unwrap(),
-            "-m",
-            "test",
-        ],
-    );
-    match result {
-        Err(msg) => assert!(
-            msg.contains("Nothing to pack"),
-            "error should mention nothing to pack: {msg}"
-        ),
-        Ok(_) => panic!("pack with empty index should fail"),
-    }
+    let tar_path = common::pack(&root, "DVD-VOL", "by_volume.tar");
+    let extract_dir = common::extract_tar(&root, &tar_path, "extract");
+    assert!(extract_dir.join("README.txt").exists());
 }
 
 #[test]
@@ -126,12 +96,7 @@ fn pack_before_init_errors() {
     let dir = tempfile::TempDir::new().unwrap();
     let root = dir.path().to_path_buf();
 
-    let result = common::run_ngdar(
-        &root,
-        &[
-            "pack", "--vol-id", "DVD-001", "--out", "out.tar", "-m", "test",
-        ],
-    );
+    let result = common::run_ngdar(&root, &["pack", "deadbeef", "--out", "out.tar"]);
     match result {
         Err(msg) => assert!(
             msg.contains("Not an ngdar repository"),
@@ -143,24 +108,15 @@ fn pack_before_init_errors() {
 
 #[test]
 fn pack_reports_total_size() {
-    let (_dir, root) = setup_repo();
-    let tar_path = root.join("session_DVD-001.tar");
-    // 18 (README.txt) + 23 (docs/note.txt) + 1024 (large.bin) = 1065 bytes
-    let out =
-        common::run_ngdar(&root, &["add", "README.txt", "docs/note.txt", "large.bin"]).unwrap();
-    assert!(out.contains("Added 3 file(s)"), "add output: {out}");
+    let (_dir, root) = setup::setup_repo();
+    common::run_ngdar(&root, &["add", "README.txt", "docs/note.txt", "large.bin"]).unwrap();
+    common::commit(&root, "DVD-001", "test");
 
+    // 18 (README.txt) + 23 (docs/note.txt) + 1024 (large.bin) = 1065 bytes
+    let tar_path = root.join("session_DVD-001.tar");
     let out = common::run_ngdar(
         &root,
-        &[
-            "pack",
-            "--vol-id",
-            "DVD-001",
-            "--out",
-            tar_path.to_str().unwrap(),
-            "-m",
-            "test",
-        ],
+        &["pack", "DVD-001", "--out", tar_path.to_str().unwrap()],
     )
     .unwrap();
     assert!(
@@ -171,20 +127,18 @@ fn pack_reports_total_size() {
 
 #[test]
 fn pack_verbose_lists_added_files() {
-    let (_dir, root) = setup_repo();
+    let (_dir, root) = setup::setup_repo();
     common::run_ngdar(&root, &["add", "README.txt", "docs/note.txt", "large.bin"]).unwrap();
+    let commit_hash = common::commit(&root, "DVD-001", "test");
     let tar_path = root.join("session_DVD-001.tar");
 
     let out = common::run_ngdar(
         &root,
         &[
             "pack",
-            "--vol-id",
-            "DVD-001",
+            &commit_hash,
             "--out",
             tar_path.to_str().unwrap(),
-            "-m",
-            "test",
             "--verbose",
         ],
     )
@@ -206,21 +160,14 @@ fn pack_verbose_lists_added_files() {
 
 #[test]
 fn pack_without_verbose_does_not_list_files() {
-    let (_dir, root) = setup_repo();
+    let (_dir, root) = setup::setup_repo();
     common::run_ngdar(&root, &["add", "README.txt", "docs/note.txt", "large.bin"]).unwrap();
+    let commit_hash = common::commit(&root, "DVD-001", "test");
     let tar_path = root.join("session_DVD-001.tar");
 
     let out = common::run_ngdar(
         &root,
-        &[
-            "pack",
-            "--vol-id",
-            "DVD-001",
-            "--out",
-            tar_path.to_str().unwrap(),
-            "-m",
-            "test",
-        ],
+        &["pack", &commit_hash, "--out", tar_path.to_str().unwrap()],
     )
     .unwrap();
 
@@ -230,16 +177,16 @@ fn pack_without_verbose_does_not_list_files() {
     );
 }
 
-fn setup_repo() -> (tempfile::TempDir, std::path::PathBuf) {
-    let dir = tempfile::TempDir::new().unwrap();
-    let root = dir.path().to_path_buf();
+#[test]
+fn pack_unknown_target_errors() {
+    let (_dir, root) = setup::setup_repo();
 
-    std::fs::create_dir_all(root.join("docs")).unwrap();
-    std::fs::write(root.join("README.txt"), "ngdar test project").unwrap();
-    std::fs::write(root.join("docs/note.txt"), "incremental backup test").unwrap();
-    std::fs::write(root.join("large.bin"), vec![0xABu8; 1024]).unwrap();
-
-    common::run_ngdar(&root, &["init"]).unwrap();
-
-    (dir, root)
+    let result = common::run_ngdar(&root, &["pack", "nonexistent", "--out", "out.tar"]);
+    match result {
+        Err(msg) => assert!(
+            msg.contains("not found"),
+            "error should mention target not found: {msg}"
+        ),
+        Ok(_) => panic!("pack with unknown target should fail"),
+    }
 }
