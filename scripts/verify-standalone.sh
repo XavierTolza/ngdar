@@ -59,8 +59,13 @@ printf 'ngdar standalone verification\n' > "$DATA/file.txt"
 
 # Run as the invoking user so the files the binary writes into the mounted
 # working directory stay owned by us (root-owned files break cleanup).
+# Point the OS-level hash cache at the writable workdir: the empty image has
+# no HOME, so the default `~/.cache/ngdar` would not be writable.
 run() {
-  docker run --rm --user "$(id -u):$(id -g)" -v "$DATA:/work" -w /work "$IMAGE" "$@"
+  docker run --rm \
+    --user "$(id -u):$(id -g)" \
+    -e XDG_CACHE_HOME=/work/.cache \
+    -v "$DATA:/work" -w /work "$IMAGE" "$@"
 }
 
 echo "==> ngdar --version in an empty (scratch) container"
