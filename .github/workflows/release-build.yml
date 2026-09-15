@@ -167,14 +167,50 @@ jobs:
           overwrite: true
 
   # ───────────────────────────────────────────────
+  # Portable, fully static Linux binary
+  # ───────────────────────────────────────────────
+  # Built with musl + `+crt-static` so it has zero runtime dependencies and
+  # runs on any Linux distribution. Verified in a `scratch` container before
+  # being shipped.
+  standalone-linux:
+    name: standalone linux (static musl)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build standalone binary
+        run: ./scripts/build-standalone.sh x86_64-unknown-linux-musl dist
+
+      - name: Verify it runs in a clean environment
+        run: |
+          tar -xzf dist/ngdar-*-x86_64-unknown-linux-musl-static.tar.gz -C dist
+          BIN="$(find dist -type f -name ngdar -path '*static*' | head -n1)"
+          ./scripts/verify-standalone.sh "$BIN"
+
+      - name: Upload archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: archive-standalone-linux
+          path: dist/*-static.tar.gz
+          if-no-files-found: error
+          overwrite: true
+
+  # ───────────────────────────────────────────────
   # Publish the GitHub Release
   # ───────────────────────────────────────────────
   publish:
     name: publish release
-    needs: [binaries, linux-packages]
+    needs: [binaries, standalone-linux, linux-packages]
     runs-on: ubuntu-latest
     # Publish whenever the binaries succeeded; Linux packages are best-effort.
-    if: always() && needs.binaries.result == 'success'
+    # The standalone Linux binary is a required deliverable, so it must pass too.
+    if: always() && needs.binaries.result == 'success' && needs.standalone-linux.result == 'success'
     steps:
       - name: Checkout
         uses: actions/checkout@v4

@@ -51,6 +51,29 @@ jobs:
       - name: Run E2E tests
         run: cargo test --test e2e
 
+  # Build the portable, fully static Linux binary and prove it actually runs
+  # in an empty environment (a `scratch` container with no libc/shell/tools).
+  # This is the gate that guarantees the artefact shipped to users is
+  # standalone.
+  standalone-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build standalone binary
+        run: ./scripts/build-standalone.sh x86_64-unknown-linux-musl dist
+
+      - name: Verify it runs in a clean environment
+        run: |
+          tar -xzf dist/ngdar-*-x86_64-unknown-linux-musl-static.tar.gz -C dist
+          BIN="$(find dist -type f -name ngdar -path '*static*' | head -n1)"
+          ./scripts/verify-standalone.sh "$BIN"
+
   # Test on every OS we ship binaries for, so a release cannot go out
   # broken because of a platform-specific regression.
   test-matrix:
