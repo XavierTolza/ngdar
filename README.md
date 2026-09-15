@@ -23,6 +23,7 @@ Each `.tar` archive it produces contains the **complete history** of your data p
 ## ✨ Features
 
 - **Incremental archiving** — Only new or changed files go into each archive
+- **Commit/pack split** — Record a snapshot with `commit`, then build TAR archives on demand for any commit (by hash, prefix, or volume ID) or any commit range
 - **Plain-text metadata** — No proprietary database. A simple `cat` is all you need to read the entire history
 - **No vendor lock-in** — Your data never depends on a closed format or a specific tool
 - **Content-addressable storage** — Every file is identified by its BLAKE3 hash (automatic deduplication)
@@ -91,49 +92,69 @@ Three categories are shown:
 
 | State | Description |
 |---|---|
-| ✅ **Staged** | Ready to be packed |
+| ✅ **Staged** | Ready to be committed |
 | 🔶 **Unstaged** | Modified on disk but not re-staged |
 | ❓ **Untracked** | New file not yet tracked |
 
-### 4. Create an archive
+### 4. Record a commit
 
 ```bash
-ngdar pack --vol-id "DVD-001" --out archive_001.tar -m "First archival session"
+ngdar commit --vol-id "DVD-001" -m "First archival session"
 ```
 
 This command:
 1. Creates **Meta** objects (size, date, permissions, hash, volume ID)
 2. Builds **Tree** and **Commit** objects
-3. Generates a `.tar` containing:
-   - The complete `.ngdar/` directory — **full history**
-   - The session's files in their original directory tree
-4. Clears the staging index (ready for the next session)
+3. Updates `HEAD` and clears the staging index (ready for the next session)
+
+It does **not** produce any archive — committing is cheap and only records
+the snapshot. Packaging is a separate step so you can burn archives only when
+you actually need to.
+
+### 5. Build an archive for a commit
+
+```bash
+ngdar pack <commit> --out archive_001.tar
+```
+
+`pack` takes a commit identifier — a full hash, a unique hash prefix, **or
+the volume ID** used at commit time — and produces a `.tar` containing:
+
+- The complete `.ngdar/` directory — **full history**
+- The files associated with that commit, in their original directory tree
+
+You can also pack a range `<from>..<to>` to bundle every file that changed
+between two commits:
+
+```bash
+ngdar pack a1b2c3d..f6e5d4c --out changes.tar
+```
 
 Before writing the archive, NGDAR prints the **total size** of the files
 about to be added, then shows a **progress bar** while the files are written
 to the TAR. Pass `--verbose` (`-v`) to also print each file as it is added:
 
 ```bash
-ngdar pack --vol-id "DVD-001" --out archive_001.tar -m "First session" --verbose
+ngdar pack DVD-001 --out archive_001.tar --verbose
 
-Packing 3 file(s)...
-Volume ID: DVD-001
+Packing commit 3f7c871e...
 Total size: 8.4 GB
    adding: photos/vacation.jpg (4.2 MB)
    adding: videos/birthday.mp4 (1.1 GB)
    ...
 ```
 
-### 5. Second session
+### 6. Second session
 
 ```bash
 ngdar add new-photos/
-ngdar pack --vol-id "DVD-002" --out archive_002.tar -m "New photos"
+ngdar commit --vol-id "DVD-002" -m "New photos"
+ngdar pack DVD-001..DVD-002 --out archive_002.tar
 ```
 
 DVD-002 contains only the new photos, **but** the `.ngdar/` inside the archive also references every file from DVD-001. From any single archive you can tell exactly where every file lives.
 
-### 6. Browse history
+### 7. Browse history
 
 ```bash
 # List all commits
@@ -161,7 +182,7 @@ ngdar log a1b2c3d4e5f6...
 .ngdar/                    # Local metadata (no binary duplication)
 ├── repository_id          # UUID v4 linking the project to its OS cache
 ├── HEAD                   # Pointer to the latest commit hash
-├── index                  # Staging area (files ready for the next pack)
+├── index                  # Staging area (files ready for the next commit)
 ├── committed              # List of already-archived files (hash + path)
 └── objects/               # Content-addressed object store
     ├── ab/                # First 2 hash chars = directory
@@ -223,9 +244,10 @@ Added vacation photos
 | Command | Description |
 |---|---|
 | `ngdar init` | Initialize a repository in the current directory |
-| `ngdar add <paths>` | Stage files for the next archive |
+| `ngdar add <paths>` | Stage files for the next commit |
 | `ngdar status` | Show staged, unstaged, and untracked files |
-| `ngdar pack --vol-id <ID> --out <archive> -m <msg> [-v]` | Create a TAR archive (progress bar; `-v` lists each file) |
+| `ngdar commit --vol-id <ID> -m <msg>` | Record staged files as a commit (no archive) |
+| `ngdar pack <target> --out <archive> [-v]` | Create a TAR archive for a commit, volume ID, or `from..to` range (progress bar; `-v` lists each file) |
 | `ngdar log [hash]` | List commits or show files in a commit |
 | `ngdar remove-commit <hash\|HEAD>` | Remove a commit from the history chain |
 | `ngdar hash <file>` | Compute and print a file's BLAKE3 hash |

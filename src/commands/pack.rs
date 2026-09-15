@@ -1,124 +1,85 @@
 use super::*;
-use crate::objects::{build_tree_from_index, write_object, Commit, Meta};
 
-/// Create a TAR archive with object metadata and incremental file data.
-pub fn pack(vol_id: &str, out: &str, message: &str, verbose: bool) -> Result<(), NgdarError> {
+/// Create a TAR archive for a commit (or a range of commits) already recorded
+/// in the repository.
+///
+/// The archive always embeds the full `.ngdar/` metadata directory, so any
+/// single archive describes the whole history. The binary data included is
+/// limited to the files associated with the requested target:
+///
+/// - a single commit (given as a full hash, a unique prefix, or a volume ID),
+///   or
+/// - a range `<from>..<to>`, in which case only the files added or changed
+///   between the two commits are packed.
+///
+/// When `verbose` is set, each file is listed as it is added and a progress
+/// bar is shown (on a terminal only) while the archive is written.
+pub fn pack(target: &str, out: &str, verbose: bool) -> Result<(), NgdarError> {
     let cwd = std::env::current_dir()?;
     let repo = Repository::find(&cwd)?;
-    let cache_path = repo.cache_path();
-    let mut cache = CacheStore::load(&cache_path)?;
 
-    // Read index
-    let index = repo.read_index()?;
-    if index.is_empty() {
-        return Err(NgdarError::Other(
-            "Nothing to pack. Use 'ngdar add' first.".to_string(),
-        ));
+    let (from, to) = parse_target(&repo, target)?;
+
+    let meta_refs = resolve_pack_meta_refs(&repo, &from, &to)?;
+    if meta_refs.is_empty() {
+        eprintln!(
+            "Warning: no files to pack for '{}' (they may all be missing on disk)",
+            target
+        );
     }
 
-    // Compute the total size of the files about to be archived
-    let mut total_size: u64 = 0;
-    for rel_str in &index {
-        total_size += std::fs::metadata(repo.path.join(rel_str))?.len();
-    }
+    // Total size of the files about to be written, for the progress bar.
+    let total_size: u64 = meta_refs
+        .iter()
+        .filter_map(|(meta_hash, _)| {
+            let text = objects::read_object(&repo.objects_path, meta_hash).ok()?;
+            let meta = objects::Meta::from_text(&text).ok()?;
+            std::fs::metadata(repo.path.join(&meta.path))
+                .ok()
+                .map(|m| m.len())
+        })
+        .sum();
 
-    println!("Packing {} file(s)...", index.len());
-    println!("Volume ID: {}", vol_id);
+    println!("Packing commit {}...", to);
+    if from != to {
+        println!("Range: {}..{}", from, to);
+    }
     println!("Total size: {}", format_size(total_size));
 
-    // Ensure cache directory exists for potential new entries
-    if let Some(parent) = cache_path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-
-    // Phase 1: Create Meta objects for each staged file
-    let mut meta_hash_for_file: std::collections::HashMap<String, String> =
-        std::collections::HashMap::new();
-    let mut committed_entries: Vec<(String, String)> = Vec::new();
-
-    for rel_str in &index {
-        let full_path = repo.path.join(rel_str);
-        let metadata = std::fs::metadata(&full_path)?;
-        let size = metadata.len();
-        let mtime = get_mtime(&metadata);
-        let perms = format_permissions(&metadata);
-
-        // Get file hash (from cache if possible, or compute)
-        let binary_hash = if let Some(h) = cache.lookup(size, mtime, rel_str) {
-            h.to_string()
-        } else {
-            let hash = hash_file(&full_path)?;
-            let hex = hash_to_hex(&hash);
-            cache.insert(size, mtime, hex.clone(), rel_str.to_string());
-            hex
-        };
-
-        committed_entries.push((binary_hash.clone(), rel_str.clone()));
-
-        // Create Meta object
-        let meta = Meta::new(
-            size,
-            mtime,
-            perms,
-            binary_hash,
-            vol_id.to_string(),
-            rel_str.clone(),
-        );
-        let meta_text = meta.to_text();
-        let meta_hash = write_object(&repo.objects_path, &meta_text)?;
-
-        meta_hash_for_file.insert(rel_str.clone(), meta_hash.clone());
-    }
-
-    // Save updated cache
-    cache.save()?;
-
-    // Phase 2: Build Tree objects from the staged files
-    let staged_refs: Vec<(&str, &str)> = meta_hash_for_file
-        .iter()
-        .map(|(path, hash)| (path.as_str(), hash.as_str()))
-        .collect();
-
-    let (root_tree_hash, _) = build_tree_from_index(&repo.objects_path, &staged_refs)?;
-
-    // Phase 3: Create Commit object
-    let head = repo.read_head()?;
-    let author = format!(
-        "{} <{}@{}>",
-        std::env::var("USER").unwrap_or_else(|_| "user".into()),
-        std::env::var("USER").unwrap_or_else(|_| "user".into()),
-        hostname()
-    );
-
-    let commit = Commit::new(
-        root_tree_hash,
-        head.clone(),
-        author,
-        os_string(),
-        format!("ngdar-{}", env!("CARGO_PKG_VERSION")),
-        now(),
-        message.to_string(),
-    );
-
-    let commit_text = commit.to_text();
-    let commit_hash = write_object(&repo.objects_path, &commit_text)?;
-    repo.write_head(&commit_hash)?;
-
-    println!("Commit: {}", commit_hash);
-
-    // Record committed files before building the archive so that
-    // .ngdar/committed is included in the TAR
-    repo.add_committed(&committed_entries)?;
-
-    // Clear index before building the archive so that .ngdar/index
-    // inside the TAR reflects the post-commit state (empty staging area)
-    repo.clear_index()?;
-
-    // Phase 4: Build TAR archive
-    build_tar_archive(&repo, &index, out, total_size, verbose)?;
+    let (written, _warnings) = build_tar_archive(&repo, &meta_refs, out, total_size, verbose)?;
 
     println!("Created archive: {}", out);
-    println!("Done. Index has been cleared.");
-
+    println!("Packed {} file(s).", written);
     Ok(())
+}
+
+/// Parse a `pack` target into a `(from, to)` commit-hash pair.
+///
+/// Accepts `<id>`, `<id>..<id>`, or `<id>...<id>`. Each `<id>` is a commit
+/// hash (full or prefix) or a volume ID. A single id yields `(id, id)`.
+fn parse_target(repo: &Repository, target: &str) -> Result<(String, String), NgdarError> {
+    let (left, right) = if let Some((a, b)) = target.split_once("...") {
+        (a, Some(b))
+    } else if let Some((a, b)) = target.split_once("..") {
+        (a, Some(b))
+    } else {
+        (target, None)
+    };
+
+    let from_id = resolve_id(repo, left)?;
+    match right {
+        Some(r) if !r.is_empty() => {
+            let to_id = resolve_id(repo, r)?;
+            Ok((from_id, to_id))
+        }
+        _ => Ok((from_id.clone(), from_id)),
+    }
+}
+
+/// Resolve a single identifier: try as a commit id first, then as a volume ID.
+fn resolve_id(repo: &Repository, id: &str) -> Result<String, NgdarError> {
+    if let Ok(hash) = resolve_commit_id(repo, id) {
+        return Ok(hash);
+    }
+    resolve_volume_id(repo, id)
 }

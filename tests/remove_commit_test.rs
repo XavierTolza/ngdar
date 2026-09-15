@@ -10,29 +10,7 @@ use std::path::Path;
 fn commit_file(root: &Path, name: &str, content: &str, vol_id: &str, msg: &str) -> String {
     std::fs::write(root.join(name), content).unwrap();
     run_ngdar(root, &["add", name]).unwrap();
-
-    let tar = root.join(format!("{}.tar", vol_id));
-    let out = run_ngdar(
-        root,
-        &[
-            "pack",
-            "--vol-id",
-            vol_id,
-            "--out",
-            tar.to_str().unwrap(),
-            "-m",
-            msg,
-        ],
-    )
-    .unwrap();
-
-    out.lines()
-        .find(|l| l.starts_with("Commit:"))
-        .expect("pack should print the commit hash")
-        .strip_prefix("Commit: ")
-        .unwrap()
-        .trim()
-        .to_string()
+    common::commit(root, vol_id, msg)
 }
 
 /// Return the commit hashes shown by `ngdar log`, newest first.

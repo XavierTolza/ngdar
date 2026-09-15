@@ -17,7 +17,7 @@ pub fn path_to_slash(path: &Path) -> String {
 pub mod cache;
 /// CLI argument parsing and subcommand dispatch.
 pub mod cli;
-/// Command implementations: init, add, status, pack, hash, log, export, db_export.
+/// Command implementations: init, add, status, commit, pack, hash, log, export, db_export.
 pub mod commands;
 /// Repository metadata: init, open, find, HEAD/index read/write.
 pub mod config;
