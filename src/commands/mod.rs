@@ -9,6 +9,7 @@ use crate::error::NgdarError;
 use crate::hash::{hash_file, hash_to_hex};
 use crate::ignore::{self, IgnoreRules};
 use crate::objects;
+use indicatif::{ProgressBar, ProgressStyle};
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -47,6 +48,24 @@ fn get_mtime(metadata: &std::fs::Metadata) -> i64 {
         .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0)
+}
+
+/// Format a byte count as a human-readable string (B, KB, MB, GB).
+fn format_size(bytes: u64) -> String {
+    const KIB: f64 = 1024.0;
+    const MIB: f64 = KIB * 1024.0;
+    const GIB: f64 = MIB * 1024.0;
+
+    let value = bytes as f64;
+    if value >= GIB {
+        format!("{:.1} GB", value / GIB)
+    } else if value >= MIB {
+        format!("{:.1} MB", value / MIB)
+    } else if value >= KIB {
+        format!("{:.1} KB", value / KIB)
+    } else {
+        format!("{} B", bytes)
+    }
 }
 
 fn hostname() -> String {
@@ -127,14 +146,34 @@ fn build_tar_archive(
     repo: &Repository,
     staged_files: &[String],
     out_path: &str,
-    _commit_hash: &str,
-    _vol_id: &str,
+    total_bytes: u64,
+    verbose: bool,
 ) -> Result<(), NgdarError> {
+    use std::io::IsTerminal;
+
     let file = std::fs::File::create(out_path)?;
     let mut builder = tar::Builder::new(&file);
 
     // --- Add full .ngdar/ metadata directory ---
     add_dir_to_tar(&mut builder, &repo.ngdar_path, ".ngdar", &repo.ngdar_path)?;
+
+    // Progress is measured in bytes of staged data written to the archive.
+    // The bar is only shown on a terminal; when output is redirected the
+    // verbose lines below still go to plain stdout.
+    let is_tty = std::io::stdout().is_terminal();
+    let progress = if is_tty {
+        let bar = ProgressBar::new(total_bytes);
+        bar.set_style(
+            ProgressStyle::with_template(
+                "{spinner} [{elapsed_precise}] [{bar:40}] {bytes}/{total_bytes} ({percent}%)",
+            )
+            .unwrap_or_else(|_| ProgressStyle::default_bar())
+            .progress_chars("=> "),
+        );
+        bar
+    } else {
+        ProgressBar::hidden()
+    };
 
     // --- Add files with original tree structure ---
     for rel_path in staged_files {
@@ -157,7 +196,25 @@ fn build_tar_archive(
                 std::io::Cursor::new(&file_data),
             )
             .map_err(|e| NgdarError::Other(format!("TAR error: {}", e)))?;
+
+        if verbose {
+            let line = format!(
+                "   adding: {} ({})",
+                rel_path,
+                format_size(file_data.len() as u64)
+            );
+            if is_tty {
+                // Keeps verbose output printed above the live progress bar.
+                progress.println(line);
+            } else {
+                println!("{}", line);
+            }
+        }
+
+        progress.inc(file_data.len() as u64);
     }
+
+    progress.finish_and_clear();
 
     // Finalize the archive
     builder.finish()?;

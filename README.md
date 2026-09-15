@@ -109,6 +109,21 @@ This command:
    - The session's files in their original directory tree
 4. Clears the staging index (ready for the next session)
 
+Before writing the archive, NGDAR prints the **total size** of the files
+about to be added, then shows a **progress bar** while the files are written
+to the TAR. Pass `--verbose` (`-v`) to also print each file as it is added:
+
+```bash
+ngdar pack --vol-id "DVD-001" --out archive_001.tar -m "First session" --verbose
+
+Packing 3 file(s)...
+Volume ID: DVD-001
+Total size: 8.4 GB
+   adding: photos/vacation.jpg (4.2 MB)
+   adding: videos/birthday.mp4 (1.1 GB)
+   ...
+```
+
 ### 5. Second session
 
 ```bash
@@ -210,7 +225,7 @@ Added vacation photos
 | `ngdar init` | Initialize a repository in the current directory |
 | `ngdar add <paths>` | Stage files for the next archive |
 | `ngdar status` | Show staged, unstaged, and untracked files |
-| `ngdar pack --vol-id <ID> --out <archive> -m <msg>` | Create a TAR archive |
+| `ngdar pack --vol-id <ID> --out <archive> -m <msg> [-v]` | Create a TAR archive (progress bar; `-v` lists each file) |
 | `ngdar log [hash]` | List commits or show files in a commit |
 | `ngdar hash <file>` | Compute and print a file's BLAKE3 hash |
 | `ngdar export <hash> --out <archive>` | Rebuild an archive from stored metadata |
