@@ -90,11 +90,12 @@ jobs:
           echo "==> ngdar --version in an empty (scratch) container"
           run --version
 
-          echo "==> full init -> add -> pack -> log workflow"
+          echo "==> full init -> add -> commit -> pack -> log workflow"
           run init
           test -d "$DATA/.ngdar"
           run add file.txt
-          run pack --vol-id VERIFY-001 --out /work/verify.tar -m "standalone verification"
+          run commit --vol-id VERIFY-001 -m "standalone verification"
+          run pack VERIFY-001 --out /work/verify.tar
           test -f "$DATA/verify.tar"
           run log
           run status
