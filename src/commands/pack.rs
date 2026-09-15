@@ -2,7 +2,7 @@ use super::*;
 use crate::objects::{build_tree_from_index, write_object, Commit, Meta};
 
 /// Create a TAR archive with object metadata and incremental file data.
-pub fn pack(vol_id: &str, out: &str, message: &str) -> Result<(), NgdarError> {
+pub fn pack(vol_id: &str, out: &str, message: &str, verbose: bool) -> Result<(), NgdarError> {
     let cwd = std::env::current_dir()?;
     let repo = Repository::find(&cwd)?;
     let cache_path = repo.cache_path();
@@ -16,8 +16,15 @@ pub fn pack(vol_id: &str, out: &str, message: &str) -> Result<(), NgdarError> {
         ));
     }
 
+    // Compute the total size of the files about to be archived
+    let mut total_size: u64 = 0;
+    for rel_str in &index {
+        total_size += std::fs::metadata(repo.path.join(rel_str))?.len();
+    }
+
     println!("Packing {} file(s)...", index.len());
     println!("Volume ID: {}", vol_id);
+    println!("Total size: {}", format_size(total_size));
 
     // Ensure cache directory exists for potential new entries
     if let Some(parent) = cache_path.parent() {
@@ -108,7 +115,7 @@ pub fn pack(vol_id: &str, out: &str, message: &str) -> Result<(), NgdarError> {
     repo.clear_index()?;
 
     // Phase 4: Build TAR archive
-    build_tar_archive(&repo, &index, out, &commit_hash, vol_id)?;
+    build_tar_archive(&repo, &index, out, total_size, verbose)?;
 
     println!("Created archive: {}", out);
     println!("Done. Index has been cleared.");

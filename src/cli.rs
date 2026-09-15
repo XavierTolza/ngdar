@@ -47,6 +47,10 @@ pub enum Commands {
         /// Commit message
         #[arg(short = 'm')]
         message: String,
+
+        /// Print each file as it is added to the archive
+        #[arg(short = 'v', long = "verbose")]
+        verbose: bool,
     },
 
     /// Compute the BLAKE3 hash of a file

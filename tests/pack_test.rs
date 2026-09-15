@@ -140,3 +140,106 @@ fn pack_before_init_errors() {
         Ok(_) => panic!("pack without init should fail"),
     }
 }
+
+#[test]
+fn pack_reports_total_size() {
+    let (_dir, root) = setup_repo();
+    let tar_path = root.join("session_DVD-001.tar");
+    // 18 (README.txt) + 23 (docs/note.txt) + 1024 (large.bin) = 1065 bytes
+    let out =
+        common::run_ngdar(&root, &["add", "README.txt", "docs/note.txt", "large.bin"]).unwrap();
+    assert!(out.contains("Added 3 file(s)"), "add output: {out}");
+
+    let out = common::run_ngdar(
+        &root,
+        &[
+            "pack",
+            "--vol-id",
+            "DVD-001",
+            "--out",
+            tar_path.to_str().unwrap(),
+            "-m",
+            "test",
+        ],
+    )
+    .unwrap();
+    assert!(
+        out.contains("Total size: 1.0 KB"),
+        "pack should report total size: {out}"
+    );
+}
+
+#[test]
+fn pack_verbose_lists_added_files() {
+    let (_dir, root) = setup_repo();
+    common::run_ngdar(&root, &["add", "README.txt", "docs/note.txt", "large.bin"]).unwrap();
+    let tar_path = root.join("session_DVD-001.tar");
+
+    let out = common::run_ngdar(
+        &root,
+        &[
+            "pack",
+            "--vol-id",
+            "DVD-001",
+            "--out",
+            tar_path.to_str().unwrap(),
+            "-m",
+            "test",
+            "--verbose",
+        ],
+    )
+    .unwrap();
+
+    assert!(
+        out.contains("adding: README.txt"),
+        "verbose should list README.txt: {out}"
+    );
+    assert!(
+        out.contains("adding: docs/note.txt"),
+        "verbose should list docs/note.txt: {out}"
+    );
+    assert!(
+        out.contains("adding: large.bin"),
+        "verbose should list large.bin: {out}"
+    );
+}
+
+#[test]
+fn pack_without_verbose_does_not_list_files() {
+    let (_dir, root) = setup_repo();
+    common::run_ngdar(&root, &["add", "README.txt", "docs/note.txt", "large.bin"]).unwrap();
+    let tar_path = root.join("session_DVD-001.tar");
+
+    let out = common::run_ngdar(
+        &root,
+        &[
+            "pack",
+            "--vol-id",
+            "DVD-001",
+            "--out",
+            tar_path.to_str().unwrap(),
+            "-m",
+            "test",
+        ],
+    )
+    .unwrap();
+
+    assert!(
+        !out.contains("adding:"),
+        "non-verbose pack should not list files: {out}"
+    );
+}
+
+fn setup_repo() -> (tempfile::TempDir, std::path::PathBuf) {
+    let dir = tempfile::TempDir::new().unwrap();
+    let root = dir.path().to_path_buf();
+
+    std::fs::create_dir_all(root.join("docs")).unwrap();
+    std::fs::write(root.join("README.txt"), "ngdar test project").unwrap();
+    std::fs::write(root.join("docs/note.txt"), "incremental backup test").unwrap();
+    std::fs::write(root.join("large.bin"), vec![0xABu8; 1024]).unwrap();
+
+    common::run_ngdar(&root, &["init"]).unwrap();
+
+    (dir, root)
+}
