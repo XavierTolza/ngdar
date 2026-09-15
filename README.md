@@ -42,37 +42,6 @@ Each `.tar` archive it produces contains the **complete history** of your data p
 - [Rust](https://www.rust-lang.org) 1.70 or newer
 - Linux, macOS (or Windows with a Unix environment)
 
-### Standalone Linux binary (recommended)
-
-Every release ships a **portable, fully standalone** Linux binary: statically
-linked against musl, it has **zero runtime dependencies** and runs on any Linux
-distribution — no libc version to match, nothing to install. It even runs in an
-empty `scratch` container.
-
-Download `ngdar-<version>-x86_64-unknown-linux-musl-static.tar.gz` from the
-[latest release](https://github.com/XavierTolza/ngdar/releases/latest), then:
-
-```bash
-tar -xzf ngdar-*-x86_64-unknown-linux-musl-static.tar.gz
-sudo install -m755 ngdar-*/ngdar /usr/local/bin/ngdar
-
-ngdar --version
-```
-
-To build it yourself:
-
-```bash
-./scripts/build-standalone.sh                    # → dist/*-static.tar.gz
-```
-
-The CI builds this binary and proves it runs in a clean environment (a
-`scratch` container with no libc, shell or tools) on every push and PR, so a
-broken standalone artefact cannot ship. You can run the same check locally:
-
-```bash
-./scripts/verify-standalone.sh dist/ngdar-*/ngdar
-```
-
 ### From source
 
 ```bash
@@ -347,9 +316,7 @@ Releases are fully automated from the GitHub web UI — no local steps.
    - tags `master` with `v1.2.0`,
    - builds and publishes a GitHub Release with cross-platform binaries
      (Linux gnu/musl on x86_64/aarch64/armv7, macOS Intel/Apple Silicon,
-     Windows) plus `.deb` and `.rpm` packages, and a portable standalone
-     Linux binary (`*-x86_64-unknown-linux-musl-static.tar.gz`) that is
-     verified in a clean environment before publishing.
+     Windows) plus `.deb` and `.rpm` packages.
 
 Versions ending in a pre-release suffix (e.g. `1.2.0-rc.1`) are published as
 GitHub pre-releases automatically.

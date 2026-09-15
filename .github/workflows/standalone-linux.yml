@@ -1,0 +1,110 @@
+name: Standalone Linux binary
+
+# Builds a portable, fully static Linux binary (musl + `+crt-static`) and
+# proves it actually runs in a truly empty environment: a Docker image built
+# `FROM scratch` with no libc, no shell and no tools. The binary is then driven
+# through a full init -> add -> pack -> log workflow, so any runtime dependency
+# fails here.
+#
+# Reused by the CI (every push/PR) and by the release pipeline (which publishes
+# the archive), so the two can never drift apart.
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: "Git ref (branch/commit) to build from."
+        required: false
+        type: string
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-and-verify:
+    name: standalone (static musl)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+
+      - name: Build static binary
+        run: |
+          set -euo pipefail
+          RUSTFLAGS="-C target-feature=+crt-static" \
+            cargo build --release --locked --target x86_64-unknown-linux-musl
+
+          BIN=target/x86_64-unknown-linux-musl/release/ngdar
+          # The whole point of this binary is that it is statically linked.
+          if ! ldd "$BIN" 2>&1 | grep -q 'statically linked'; then
+            echo "::error::$BIN is not statically linked"
+            ldd "$BIN" || true
+            exit 1
+          fi
+
+          VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)"
+          STAGE="ngdar-${VERSION}-x86_64-unknown-linux-musl-static"
+          mkdir -p "dist/$STAGE"
+          cp "$BIN" README.md LICENSE "dist/$STAGE/"
+          tar -C dist -czf "dist/${STAGE}.tar.gz" "$STAGE"
+
+      - name: Verify it runs in a clean environment
+        run: |
+          set -euo pipefail
+          tar -xzf dist/*-static.tar.gz -C dist
+          BIN="$(find dist -type f -name ngdar | head -n1)"
+
+          # The image contains exactly one file: the binary. No shell to fall
+          # back on, so anything it needs at runtime must already be compiled
+          # into it. Containers run as the invoking user so the files written
+          # into the mounted workdir stay owned by us (root-owned files break
+          # cleanup); XDG_CACHE_HOME is pointed there because the empty image
+          # has no writable HOME for the hash cache.
+          WORK="$(mktemp -d)"
+          DATA="$(mktemp -d)"
+          IMAGE="ngdar-standalone-verify:ci"
+          cleanup() {
+            docker image rm -f "$IMAGE" >/dev/null 2>&1 || true
+            rm -rf "$WORK" "$DATA" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          cp "$BIN" "$WORK/ngdar"
+          printf 'FROM scratch\nCOPY ngdar /ngdar\nENTRYPOINT ["/ngdar"]\n' > "$WORK/Dockerfile"
+          docker build -q -t "$IMAGE" "$WORK"
+
+          printf 'ngdar standalone verification\n' > "$DATA/file.txt"
+          run() {
+            docker run --rm --user "$(id -u):$(id -g)" \
+              -e XDG_CACHE_HOME=/work/.cache \
+              -v "$DATA:/work" -w /work "$IMAGE" "$@"
+          }
+
+          echo "==> ngdar --version in an empty (scratch) container"
+          run --version
+
+          echo "==> full init -> add -> pack -> log workflow"
+          run init
+          test -d "$DATA/.ngdar"
+          run add file.txt
+          run pack --vol-id VERIFY-001 --out /work/verify.tar -m "standalone verification"
+          test -f "$DATA/verify.tar"
+          run log
+          run status
+
+          echo "OK: the binary runs standalone in an empty environment."
+
+      - name: Upload archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: archive-standalone-linux
+          path: dist/*-static.tar.gz
+          if-no-files-found: error
+          overwrite: true
