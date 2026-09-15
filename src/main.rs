@@ -37,6 +37,7 @@ fn main() {
         } => commands::pack(vol_id, out, message),
         Commands::Hash { path } => commands::hash(path),
         Commands::Log { commit_hash } => commands::log(commit_hash.as_deref()),
+        Commands::RemoveCommit { commit_hash } => commands::remove_commit(commit_hash),
         Commands::Export { commit_hash, out } => commands::export(commit_hash, out),
         Commands::DbExport { csv } => commands::db_export(csv),
     };

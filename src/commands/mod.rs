@@ -181,6 +181,8 @@ pub mod init;
 pub mod log;
 /// `ngdar pack --vol-id <ID> --out <file.tar> -m <msg>` — create archive.
 pub mod pack;
+/// `ngdar remove-commit <hash|HEAD>` — remove a commit from the history.
+pub mod remove_commit;
 /// `ngdar status` — show staged, unstaged, untracked files.
 pub mod status;
 
@@ -191,4 +193,5 @@ pub use hash::hash;
 pub use init::init;
 pub use log::log;
 pub use pack::pack;
+pub use remove_commit::remove_commit;
 pub use status::status;
