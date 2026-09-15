@@ -65,6 +65,16 @@ pub enum Commands {
         commit_hash: Option<String>,
     },
 
+    /// Remove a commit from the history chain
+    ///
+    /// Drops the given commit and rewrites every newer commit so its
+    /// parent pointer skips over it. Pass a commit hash or the literal
+    /// string HEAD to remove the latest commit.
+    RemoveCommit {
+        /// Commit hash to remove, or HEAD for the latest commit
+        commit_hash: String,
+    },
+
     /// Recreate a TAR archive from stored metadata
     ///
     /// Reads files from disk at their original paths, verifies their

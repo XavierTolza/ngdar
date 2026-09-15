@@ -29,17 +29,15 @@ fn os_string() -> String {
     format!("{} {}", os, arch)
 }
 
-fn format_permissions(mode: &std::fs::Metadata) -> u32 {
-    // Use the lower 9 bits plus setuid/setuid/sticky
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        mode.permissions().mode() & 0o777
-    }
-    #[cfg(not(unix))]
-    {
-        0o644
-    }
+#[cfg(unix)]
+fn format_permissions(metadata: &std::fs::Metadata) -> u32 {
+    use std::os::unix::fs::PermissionsExt;
+    metadata.permissions().mode() & 0o777
+}
+
+#[cfg(not(unix))]
+fn format_permissions(_metadata: &std::fs::Metadata) -> u32 {
+    0o644
 }
 
 fn get_mtime(metadata: &std::fs::Metadata) -> i64 {
@@ -183,6 +181,8 @@ pub mod init;
 pub mod log;
 /// `ngdar pack --vol-id <ID> --out <file.tar> -m <msg>` — create archive.
 pub mod pack;
+/// `ngdar remove-commit <hash|HEAD>` — remove a commit from the history.
+pub mod remove_commit;
 /// `ngdar status` — show staged, unstaged, untracked files.
 pub mod status;
 
@@ -193,4 +193,5 @@ pub use hash::hash;
 pub use init::init;
 pub use log::log;
 pub use pack::pack;
+pub use remove_commit::remove_commit;
 pub use status::status;

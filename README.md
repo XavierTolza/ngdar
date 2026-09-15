@@ -212,6 +212,7 @@ Added vacation photos
 | `ngdar status` | Show staged, unstaged, and untracked files |
 | `ngdar pack --vol-id <ID> --out <archive> -m <msg>` | Create a TAR archive |
 | `ngdar log [hash]` | List commits or show files in a commit |
+| `ngdar remove-commit <hash\|HEAD>` | Remove a commit from the history chain |
 | `ngdar hash <file>` | Compute and print a file's BLAKE3 hash |
 | `ngdar export <hash> --out <archive>` | Rebuild an archive from stored metadata |
 | `ngdar db-export <file.csv>` | Export all metadata to CSV |

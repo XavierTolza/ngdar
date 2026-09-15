@@ -94,6 +94,14 @@ jobs:
           BRANCH="release/v$VERSION"
           git checkout -B "$BRANCH" "origin/$SOURCE_BRANCH"
 
+          # The PR targets master, so the branch must already contain
+          # master's history. Otherwise the version bump below rewrites a
+          # line master changed for the previous release and the PR can
+          # never be merged (conflict on the `version` line).
+          git -c user.name="github-actions[bot]" \
+              -c user.email="github-actions[bot]@users.noreply.github.com" \
+              merge --no-edit origin/master
+
           # Cargo.toml is the single source of truth for the version.
           sed -i "0,/^version = \".*\"/s//version = \"$VERSION\"/" Cargo.toml
           # Refresh the lockfile so `--locked` builds stay consistent.
@@ -146,9 +154,12 @@ jobs:
           echo "pr=$PR" >> "$GITHUB_OUTPUT"
           echo "Opened/updated PR #$PR"
 
-          # Best-effort native auto-merge; the merge job below is the real driver.
-          gh pr merge "$PR" --squash --auto \
-            || echo "::notice::Native auto-merge unavailable; the merge job will merge PR #$PR."
+          # Do NOT enable auto-merge here: this repository has auto-merge
+          # disabled, and when a PR is immediately mergeable (no required
+          # checks) `gh pr merge --auto` falls back to merging right away —
+          # closing the PR (and aborting its `pull_request` CI run) long
+          # before the `ci` job below has validated the release branch.
+          # The `merge` job is the only thing allowed to merge, after CI.
 
   # ───────────────────────────────────────────────
   # 2. Validate the release branch (CI)
@@ -165,6 +176,11 @@ jobs:
   merge:
     needs: [prepare, ci]
     runs-on: ubuntu-latest
+    env:
+      # This job never checks out the repo, so `gh` cannot discover the
+      # repository from a git remote — without this it aborts with
+      # "fatal: not a git repository".
+      GH_REPO: ${{ github.repository }}
     steps:
       - name: Merge the release pull request
         env:
