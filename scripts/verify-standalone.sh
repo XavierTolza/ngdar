@@ -37,7 +37,9 @@ DATA="$(mktemp -d)"
 IMAGE="ngdar-standalone-verify:$$"
 cleanup() {
   docker image rm -f "$IMAGE" >/dev/null 2>&1 || true
-  rm -rf "$WORK" "$DATA"
+  # Files created by the container are owned by root; best-effort removal so a
+  # leftover does not mask the real result.
+  rm -rf "$WORK" "$DATA" 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -55,8 +57,10 @@ docker build -q -t "$IMAGE" "$WORK" >/dev/null
 # Create the input file on the host: the scratch container has no `echo`.
 printf 'ngdar standalone verification\n' > "$DATA/file.txt"
 
+# Run as the invoking user so the files the binary writes into the mounted
+# working directory stay owned by us (root-owned files break cleanup).
 run() {
-  docker run --rm -v "$DATA:/work" -w /work "$IMAGE" "$@"
+  docker run --rm --user "$(id -u):$(id -g)" -v "$DATA:/work" -w /work "$IMAGE" "$@"
 }
 
 echo "==> ngdar --version in an empty (scratch) container"
