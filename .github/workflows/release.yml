@@ -94,6 +94,14 @@ jobs:
           BRANCH="release/v$VERSION"
           git checkout -B "$BRANCH" "origin/$SOURCE_BRANCH"
 
+          # The PR targets master, so the branch must already contain
+          # master's history. Otherwise the version bump below rewrites a
+          # line master changed for the previous release and the PR can
+          # never be merged (conflict on the `version` line).
+          git -c user.name="github-actions[bot]" \
+              -c user.email="github-actions[bot]@users.noreply.github.com" \
+              merge --no-edit origin/master
+
           # Cargo.toml is the single source of truth for the version.
           sed -i "0,/^version = \".*\"/s//version = \"$VERSION\"/" Cargo.toml
           # Refresh the lockfile so `--locked` builds stay consistent.
