@@ -51,6 +51,15 @@ jobs:
       - name: Run E2E tests
         run: cargo test --test e2e
 
+  # Build the portable, fully static Linux binary and prove it actually runs
+  # in an empty environment (a `scratch` container with no libc/shell/tools).
+  # This is the gate that guarantees the artefact shipped to users is
+  # standalone.
+  standalone-linux:
+    uses: ./.github/workflows/standalone-linux.yml
+    with:
+      ref: ${{ inputs.ref || github.sha }}
+
   # Test on every OS we ship binaries for, so a release cannot go out
   # broken because of a platform-specific regression.
   test-matrix:
