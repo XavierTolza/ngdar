@@ -142,13 +142,95 @@ fn collect_meta_with_hashes(
     Ok(())
 }
 
+/// Append a single regular file to the tar builder under its repository path.
+fn append_file_to_tar(
+    builder: &mut tar::Builder<&std::fs::File>,
+    full_path: &Path,
+    tar_path: &str,
+) -> Result<(), NgdarError> {
+    let file_data = std::fs::read(full_path)?;
+    let metadata = std::fs::metadata(full_path)?;
+
+    let mut header = tar::Header::new_gnu();
+    header.set_size(file_data.len() as u64);
+    header.set_mode(format_permissions(&metadata));
+    header.set_mtime(get_mtime(&metadata) as u64);
+    header.set_entry_type(tar::EntryType::Regular);
+
+    builder
+        .append_data(&mut header, tar_path, std::io::Cursor::new(&file_data))
+        .map_err(|e| NgdarError::Other(format!("TAR error: {}", e)))?;
+    Ok(())
+}
+
+/// Verify and append every file referenced by a list of Meta objects.
+///
+/// Each entry is a `(meta_hash, rel_path)` pair. The referenced binary is read
+/// from disk after checking that it still exists and that its BLAKE3 hash
+/// matches the recorded `binary_hash`; missing or modified files are skipped
+/// with a warning. Returns the number of files written and skipped.
+///
+/// `progress` is advanced by the size of each file that is written. When
+/// `verbose` is set, each written file is listed (above the live progress bar
+/// on a terminal, or as plain stdout when output is redirected).
+fn append_meta_files_to_tar(
+    builder: &mut tar::Builder<&std::fs::File>,
+    repo: &Repository,
+    meta_refs: &[(String, String)],
+    progress: &ProgressBar,
+    verbose: bool,
+) -> Result<(u64, u64), NgdarError> {
+    use std::io::IsTerminal;
+
+    let is_tty = std::io::stdout().is_terminal();
+    let mut written = 0u64;
+    let mut warnings = 0u64;
+    for (meta_hash, _rel_path) in meta_refs {
+        let meta_text = objects::read_object(&repo.objects_path, meta_hash)?;
+        let Ok(meta) = objects::Meta::from_text(&meta_text) else {
+            continue;
+        };
+        let full_path = repo.path.join(&meta.path);
+        if !full_path.exists() {
+            eprintln!("Warning: '{}' not found on disk, skipping", meta.path);
+            warnings += 1;
+            continue;
+        }
+        let actual_hex = hash_to_hex(&hash_file(&full_path)?);
+        if actual_hex != meta.binary_hash {
+            eprintln!(
+                "Warning: '{}' has been modified (hash mismatch), skipping",
+                meta.path
+            );
+            warnings += 1;
+            continue;
+        }
+        let size = std::fs::metadata(&full_path)?.len();
+        append_file_to_tar(builder, &full_path, &meta.path)?;
+        if verbose {
+            let line = format!("   adding: {} ({})", meta.path, format_size(size));
+            if is_tty {
+                // Keeps verbose output printed above the live progress bar.
+                progress.println(line);
+            } else {
+                println!("{}", line);
+            }
+        }
+        progress.inc(size);
+        written += 1;
+    }
+    Ok((written, warnings))
+}
+
+/// Build a TAR archive containing the full `.ngdar/` metadata directory plus
+/// the given Meta-referenced data files.
 fn build_tar_archive(
     repo: &Repository,
-    staged_files: &[String],
+    meta_refs: &[(String, String)],
     out_path: &str,
     total_bytes: u64,
     verbose: bool,
-) -> Result<(), NgdarError> {
+) -> Result<(u64, u64), NgdarError> {
     use std::io::IsTerminal;
 
     let file = std::fs::File::create(out_path)?;
@@ -157,9 +239,9 @@ fn build_tar_archive(
     // --- Add full .ngdar/ metadata directory ---
     add_dir_to_tar(&mut builder, &repo.ngdar_path, ".ngdar", &repo.ngdar_path)?;
 
-    // Progress is measured in bytes of staged data written to the archive.
-    // The bar is only shown on a terminal; when output is redirected the
-    // verbose lines below still go to plain stdout.
+    // Progress is measured in bytes of data written to the archive. The bar is
+    // only shown on a terminal; when output is redirected the verbose lines
+    // below still go to plain stdout.
     let is_tty = std::io::stdout().is_terminal();
     let progress = if is_tty {
         let bar = ProgressBar::new(total_bytes);
@@ -175,50 +257,113 @@ fn build_tar_archive(
         ProgressBar::hidden()
     };
 
-    // --- Add files with original tree structure ---
-    for rel_path in staged_files {
-        let full_path = repo.path.join(rel_path);
-        let data_tar_path = rel_path.to_string();
-        let file_data = std::fs::read(&full_path)?;
-        let metadata = std::fs::metadata(&full_path)?;
-
-        let mut header = tar::Header::new_gnu();
-        header.set_size(file_data.len() as u64);
-        header.set_mode(format_permissions(&metadata));
-        header.set_mtime(get_mtime(&metadata) as u64);
-        header.set_entry_type(tar::EntryType::Regular);
-
-        // Set the file path within the archive
-        builder
-            .append_data(
-                &mut header,
-                data_tar_path.as_str(),
-                std::io::Cursor::new(&file_data),
-            )
-            .map_err(|e| NgdarError::Other(format!("TAR error: {}", e)))?;
-
-        if verbose {
-            let line = format!(
-                "   adding: {} ({})",
-                rel_path,
-                format_size(file_data.len() as u64)
-            );
-            if is_tty {
-                // Keeps verbose output printed above the live progress bar.
-                progress.println(line);
-            } else {
-                println!("{}", line);
-            }
-        }
-
-        progress.inc(file_data.len() as u64);
-    }
+    // --- Add selected data files under their original paths ---
+    let (written, warnings) =
+        append_meta_files_to_tar(&mut builder, repo, meta_refs, &progress, verbose)?;
 
     progress.finish_and_clear();
 
     // Finalize the archive
     builder.finish()?;
-    Ok(())
+    Ok((written, warnings))
+}
+
+/// Collect all `(meta_hash, rel_path)` pairs reachable from a commit's tree.
+fn collect_commit_meta_refs(
+    repo: &Repository,
+    commit_hash: &str,
+) -> Result<Vec<(String, String)>, NgdarError> {
+    let commit_text = objects::read_object(&repo.objects_path, commit_hash)?;
+    let commit = objects::Commit::from_text(&commit_text)?;
+    let tree_text = objects::read_object(&repo.objects_path, &commit.tree_hash)?;
+    let tree = objects::Tree::from_text(&tree_text)?;
+    let mut meta_refs: Vec<(String, String)> = Vec::new();
+    collect_meta_with_hashes(&repo.objects_path, &tree, &mut meta_refs, "")?;
+    Ok(meta_refs)
+}
+
+/// Resolve the set of Meta references to package for a `pack` invocation.
+///
+/// - Single commit: every file reachable from that commit.
+/// - Range `from..to`: every file added or changed between the two commits,
+///   i.e. files whose Meta hash differs from the `from` endpoint (or which do
+///   not exist there at all).
+fn resolve_pack_meta_refs(
+    repo: &Repository,
+    from: &str,
+    to: &str,
+) -> Result<Vec<(String, String)>, NgdarError> {
+    if from == to {
+        return collect_commit_meta_refs(repo, to);
+    }
+
+    let old_refs = collect_commit_meta_refs(repo, from)?;
+    let old_by_path: std::collections::HashMap<&str, &str> = old_refs
+        .iter()
+        .map(|(hash, path)| (path.as_str(), hash.as_str()))
+        .collect();
+
+    let new_refs = collect_commit_meta_refs(repo, to)?;
+    let changed: Vec<(String, String)> = new_refs
+        .into_iter()
+        .filter(|(hash, path)| old_by_path.get(path.as_str()) != Some(&hash.as_str()))
+        .collect();
+    Ok(changed)
+}
+
+/// Resolve a commit identifier to a full commit hash.
+///
+/// Accepts a full 64-character hash or a unique prefix; prefixes are expanded
+/// by scanning the commit history reachable from HEAD.
+pub fn resolve_commit_id(repo: &Repository, id: &str) -> Result<String, NgdarError> {
+    if id.len() == 64 && repo.objects_path.join(&id[..2]).join(&id[2..]).is_file() {
+        return Ok(id.to_string());
+    }
+
+    let mut current = repo.read_head()?;
+    while let Some(hash) = current {
+        if hash.starts_with(id) {
+            return Ok(hash);
+        }
+        let commit_text = objects::read_object(&repo.objects_path, &hash)?;
+        let commit = objects::Commit::from_text(&commit_text)?;
+        current = commit.parent_hash;
+    }
+
+    Err(NgdarError::Other(format!(
+        "Commit '{}' not found in history",
+        id
+    )))
+}
+
+/// Resolve a volume identifier to the newest commit whose tree references a
+/// Meta object carrying that `volume_id`.
+pub fn resolve_volume_id(repo: &Repository, vol_id: &str) -> Result<String, NgdarError> {
+    let mut current = repo.read_head()?;
+    while let Some(hash) = current {
+        let meta_refs = collect_commit_meta_refs(repo, &hash)?;
+        let mut found = false;
+        for (meta_hash, _path) in &meta_refs {
+            let meta_text = objects::read_object(&repo.objects_path, meta_hash)?;
+            if let Ok(meta) = objects::Meta::from_text(&meta_text) {
+                if meta.volume_id == vol_id {
+                    found = true;
+                    break;
+                }
+            }
+        }
+        if found {
+            return Ok(hash);
+        }
+        let commit_text = objects::read_object(&repo.objects_path, &hash)?;
+        let commit = objects::Commit::from_text(&commit_text)?;
+        current = commit.parent_hash;
+    }
+
+    Err(NgdarError::Other(format!(
+        "Volume '{}' not found in history",
+        vol_id
+    )))
 }
 
 // ---------------------------------------------------------------------------
@@ -226,6 +371,8 @@ fn build_tar_archive(
 // ---------------------------------------------------------------------------
 /// `ngdar add <paths>` — stage files for the next archive.
 pub mod add;
+/// `ngdar commit --vol-id <ID> -m <msg>` — record staged files as a commit.
+pub mod commit;
 /// `ngdar db-export <csv>` — export object database as CSV.
 pub mod db_export;
 /// `ngdar export <commit> <out>` — extract files from a commit.
@@ -236,16 +383,20 @@ pub mod hash;
 pub mod init;
 /// `ngdar log [commit]` — show commit history.
 pub mod log;
-/// `ngdar pack --vol-id <ID> --out <file.tar> -m <msg>` — create archive.
+/// `ngdar pack <target> --out <file.tar>` — create archive for a commit/range.
 pub mod pack;
+/// `ngdar remove-commit <hash|HEAD>` — remove a commit from the history.
+pub mod remove_commit;
 /// `ngdar status` — show staged, unstaged, untracked files.
 pub mod status;
 
 pub use add::add;
+pub use commit::commit;
 pub use db_export::db_export;
 pub use export::export;
 pub use hash::hash;
 pub use init::init;
 pub use log::log;
 pub use pack::pack;
+pub use remove_commit::remove_commit;
 pub use status::status;

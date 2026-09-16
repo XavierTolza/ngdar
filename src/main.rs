@@ -30,14 +30,15 @@ fn main() {
         Commands::Init => commands::init(),
         Commands::Status => commands::status(),
         Commands::Add { paths } => commands::add(paths),
+        Commands::Commit { vol_id, message } => commands::commit(vol_id, message),
         Commands::Pack {
-            vol_id,
+            target,
             out,
-            message,
             verbose,
-        } => commands::pack(vol_id, out, message, *verbose),
+        } => commands::pack(target, out, *verbose),
         Commands::Hash { path } => commands::hash(path),
         Commands::Log { commit_hash } => commands::log(commit_hash.as_deref()),
+        Commands::RemoveCommit { commit_hash } => commands::remove_commit(commit_hash),
         Commands::Export { commit_hash, out } => commands::export(commit_hash, out),
         Commands::DbExport { csv } => commands::db_export(csv),
     };

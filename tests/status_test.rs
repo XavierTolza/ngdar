@@ -50,55 +50,29 @@ fn status_shows_staged_files() {
 }
 
 #[test]
-fn status_shows_nothing_staged_after_pack() {
+fn status_shows_nothing_staged_after_commit() {
     let (_dir, root) = setup::setup_repo();
 
     common::run_ngdar(&root, &["add", "README.txt"]).unwrap();
-    let tar_path = root.join("s.tar");
-    common::run_ngdar(
-        &root,
-        &[
-            "pack",
-            "--vol-id",
-            "DVD-001",
-            "--out",
-            tar_path.to_str().unwrap(),
-            "-m",
-            "test",
-        ],
-    )
-    .unwrap();
+    common::commit(&root, "DVD-001", "test");
 
     let out = common::run_ngdar(&root, &["status"]).unwrap();
     assert!(
         out.contains("(nothing staged)"),
-        "after pack, nothing should be staged: {out}"
+        "after commit, nothing should be staged: {out}"
     );
 }
 
 #[test]
-fn status_shows_no_unstaged_after_pack() {
+fn status_shows_no_unstaged_after_commit() {
     let (_dir, root) = setup::setup_repo();
 
     common::run_ngdar(&root, &["add", "README.txt"]).unwrap();
     common::run_ngdar(&root, &["add", "docs/note.txt"]).unwrap();
     common::run_ngdar(&root, &["add", "large.bin"]).unwrap();
-    let tar_path = root.join("s.tar");
-    common::run_ngdar(
-        &root,
-        &[
-            "pack",
-            "--vol-id",
-            "DVD-001",
-            "--out",
-            tar_path.to_str().unwrap(),
-            "-m",
-            "test",
-        ],
-    )
-    .unwrap();
+    common::commit(&root, "DVD-001", "test");
 
-    // After pack, add a new file — old committed files should not appear as unstaged
+    // After commit, add a new file — old committed files should not appear as unstaged
     std::fs::write(root.join("new_file.txt"), "second session file").unwrap();
     common::run_ngdar(&root, &["add", "new_file.txt"]).unwrap();
 

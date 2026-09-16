@@ -34,19 +34,33 @@ pub enum Commands {
         paths: Vec<String>,
     },
 
-    /// Create a TAR archive from staged files
-    Pack {
+    /// Record the staged files as a new commit
+    ///
+    /// Creates the Meta, Tree and Commit objects and updates HEAD, without
+    /// producing any TAR archive. Run 'ngdar pack' afterwards to build the
+    /// archive for a commit.
+    Commit {
         /// Volume identifier (e.g., "DVD-001", "ARCHIVE-2026-08")
         #[arg(long = "vol-id")]
         vol_id: String,
 
-        /// Output tar file path
-        #[arg(long = "out")]
-        out: String,
-
         /// Commit message
         #[arg(short = 'm')]
         message: String,
+    },
+
+    /// Create a TAR archive for an existing commit or range of commits
+    ///
+    /// The target can be a commit hash (full or unique prefix), a volume ID,
+    /// or a range of the form `<from>..<to>` to archive every file that
+    /// changed between the two commits.
+    Pack {
+        /// Commit hash, volume ID, or range (e.g. "abc123..def456")
+        target: String,
+
+        /// Output tar file path
+        #[arg(long = "out")]
+        out: String,
 
         /// Print each file as it is added to the archive
         #[arg(short = 'v', long = "verbose")]
@@ -67,6 +81,16 @@ pub enum Commands {
     Log {
         /// Optional commit hash to inspect
         commit_hash: Option<String>,
+    },
+
+    /// Remove a commit from the history chain
+    ///
+    /// Drops the given commit and rewrites every newer commit so its
+    /// parent pointer skips over it. Pass a commit hash or the literal
+    /// string HEAD to remove the latest commit.
+    RemoveCommit {
+        /// Commit hash to remove, or HEAD for the latest commit
+        commit_hash: String,
     },
 
     /// Recreate a TAR archive from stored metadata

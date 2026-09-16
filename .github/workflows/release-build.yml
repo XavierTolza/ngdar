@@ -167,14 +167,26 @@ jobs:
           overwrite: true
 
   # ───────────────────────────────────────────────
+  # Portable, fully static Linux binary
+  # ───────────────────────────────────────────────
+  # Built with musl + `+crt-static` so it has zero runtime dependencies and
+  # runs on any Linux distribution. Verified in a `scratch` container before
+  # being shipped. Shares its definition with CI so the two never drift.
+  standalone-linux:
+    uses: ./.github/workflows/standalone-linux.yml
+    with:
+      ref: ${{ inputs.tag || github.ref_name }}
+
+  # ───────────────────────────────────────────────
   # Publish the GitHub Release
   # ───────────────────────────────────────────────
   publish:
     name: publish release
-    needs: [binaries, linux-packages]
+    needs: [binaries, standalone-linux, linux-packages]
     runs-on: ubuntu-latest
     # Publish whenever the binaries succeeded; Linux packages are best-effort.
-    if: always() && needs.binaries.result == 'success'
+    # The standalone Linux binary is a required deliverable, so it must pass too.
+    if: always() && needs.binaries.result == 'success' && needs.standalone-linux.result == 'success'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
