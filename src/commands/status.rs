@@ -1,5 +1,4 @@
 use super::*;
-use crate::objects::{self, Commit};
 
 /// Show staged, unstaged, and untracked file status.
 pub fn status() -> Result<(), NgdarError> {
@@ -10,17 +9,13 @@ pub fn status() -> Result<(), NgdarError> {
     // Read current index (staged)
     let staged = repo.read_index()?;
 
-    // Read HEAD to get previously committed files
-    let head_hash = repo.read_head()?;
-    let mut committed_files: Vec<String> = Vec::new();
-    if let Some(ref hash) = head_hash {
-        let commit_text = objects::read_object(&repo.objects_path, hash)?;
-        let commit = Commit::from_text(&commit_text)?;
-        let tree_text = objects::read_object(&repo.objects_path, &commit.tree_hash)?;
-        let tree = objects::Tree::from_text(&tree_text)?;
-        // Collect all meta hashes from the tree recursively
-        collect_meta_hashes(&repo.objects_path, &tree, &mut committed_files, "")?;
-    }
+    // Full set of tracked files: every file recorded as committed. A commit
+    // tree only contains the files staged for that commit (it is not merged
+    // with the parent's tree), so the HEAD tree alone is not a reliable
+    // snapshot of everything that was archived over time.
+    let committed = repo.read_committed()?;
+    let mut committed_files: Vec<String> = committed.iter().map(|(_, path)| path.clone()).collect();
+    committed_files.dedup();
 
     // Determine unstaged: files that are in committed_files but modified on disk
     let cache_path = repo.cache_path();
@@ -90,33 +85,5 @@ pub fn status() -> Result<(), NgdarError> {
         }
     }
 
-    Ok(())
-}
-
-fn collect_meta_hashes(
-    objects_dir: &Path,
-    tree: &objects::Tree,
-    results: &mut Vec<String>,
-    prefix: &str,
-) -> Result<(), NgdarError> {
-    for entry in &tree.entries {
-        if entry.kind == "meta" {
-            let full = if prefix.is_empty() {
-                entry.name.clone()
-            } else {
-                format!("{}/{}", prefix, entry.name)
-            };
-            results.push(full);
-        } else if entry.kind == "tree" {
-            let sub_text = objects::read_object(objects_dir, &entry.hash)?;
-            let sub_tree = objects::Tree::from_text(&sub_text)?;
-            let new_prefix = if prefix.is_empty() {
-                entry.name.clone()
-            } else {
-                format!("{}/{}", prefix, entry.name)
-            };
-            collect_meta_hashes(objects_dir, &sub_tree, results, &new_prefix)?;
-        }
-    }
     Ok(())
 }
