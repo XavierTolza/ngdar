@@ -86,3 +86,31 @@ fn status_shows_no_unstaged_after_commit() {
         "old committed files should not appear unstaged: {out}"
     );
 }
+
+/// Files committed in an earlier commit must not reappear as untracked after
+/// a later commit: a commit tree only contains the files staged for that
+/// commit, so status must rely on the full committed-tracking record.
+#[test]
+fn status_does_not_show_earlier_committed_files_as_untracked() {
+    let (_dir, root) = setup::setup_repo();
+
+    common::run_ngdar(&root, &["add", "README.txt"]).unwrap();
+    common::commit(&root, "vol1", "first commit");
+
+    common::run_ngdar(&root, &["add", "docs/note.txt"]).unwrap();
+    common::commit(&root, "vol1", "second commit");
+
+    let out = common::run_ngdar(&root, &["status"]).unwrap();
+    assert!(
+        !out.contains("? README.txt"),
+        "README.txt was committed in the first commit and should not be untracked: {out}"
+    );
+    assert!(
+        out.contains("? large.bin"),
+        "large.bin was never committed and should remain untracked: {out}"
+    );
+    assert!(
+        out.contains("(no unstaged changes)"),
+        "unchanged committed files should not appear unstaged: {out}"
+    );
+}
