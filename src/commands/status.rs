@@ -52,37 +52,22 @@ pub fn status(show_hash: bool, full_hash: bool) -> Result<(), NgdarError> {
         committed_hash.insert(path.clone(), hash.clone());
     }
 
-    // Determine unstaged: files that are in committed_files but modified on disk
+    // Determine unstaged: files that are in committed_files but modified on disk.
+    //
+    // The on-disk hash cache (`~/.cache`, XDG) is only a performance hint and
+    // may legitimately be absent — a fresh container (the Docker workflow
+    // mounts only the data directory), a CI worker, or an archive restored on
+    // another machine. A cache miss therefore does NOT prove that a file
+    // changed: verify against the hash recorded in `.ngdar/committed` at the
+    // file's most recent commit, and re-seed the cache when they match.
     let cache_path = repo.cache_path();
-    let cache = CacheStore::load(&cache_path)?;
+    let mut cache = CacheStore::load(&cache_path)?;
+    let mut cache_updated = false;
     let mut unstaged: Vec<UnstagedFile> = Vec::new();
 
     for rel_path in &committed_files {
         let full_path = repo.path.join(rel_path);
-        if full_path.exists() {
-            let metadata = std::fs::metadata(&full_path)?;
-            let size = metadata.len();
-            let mtime = get_mtime(&metadata);
-
-            // Check cache
-            let cached_hash = cache.lookup(size, mtime, rel_path);
-            if cached_hash.is_none() {
-                // File changed (different size or mtime) or not in cache
-                if !staged.contains(rel_path) {
-                    let new_hash = if show_hash {
-                        Some(hash_to_hex(&hash_file(&full_path)?))
-                    } else {
-                        None
-                    };
-                    unstaged.push(UnstagedFile {
-                        path: rel_path.clone(),
-                        old_hash: committed_hash.get(rel_path).cloned(),
-                        new_hash,
-                        deleted: false,
-                    });
-                }
-            }
-        } else {
+        if !full_path.exists() {
             // File was deleted from disk
             if !staged.contains(rel_path) {
                 unstaged.push(UnstagedFile {
@@ -92,7 +77,39 @@ pub fn status(show_hash: bool, full_hash: bool) -> Result<(), NgdarError> {
                     deleted: true,
                 });
             }
+            continue;
         }
+
+        let metadata = std::fs::metadata(&full_path)?;
+        let size = metadata.len();
+        let mtime = get_mtime(&metadata);
+
+        // Fast path: size/mtime unchanged since the last hash we recorded.
+        if cache.lookup(size, mtime, rel_path).is_some() {
+            continue;
+        }
+        if staged.contains(rel_path) {
+            continue;
+        }
+
+        // Cache miss: the file may still be unchanged. Compare its actual
+        // hash with the one archived at its most recent commit.
+        let hex = hash_to_hex(&hash_file(&full_path)?);
+        if committed_hash.get(rel_path).map(String::as_str) == Some(hex.as_str()) {
+            cache.insert(size, mtime, hex, rel_path.clone());
+            cache_updated = true;
+        } else {
+            unstaged.push(UnstagedFile {
+                path: rel_path.clone(),
+                old_hash: committed_hash.get(rel_path).cloned(),
+                new_hash: if show_hash { Some(hex) } else { None },
+                deleted: false,
+            });
+        }
+    }
+
+    if cache_updated {
+        cache.save()?;
     }
 
     // Untracked files
