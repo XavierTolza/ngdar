@@ -25,7 +25,17 @@ pub enum Commands {
     Init,
 
     /// Show repository status (staged, unstaged, untracked)
-    Status,
+    Status {
+        /// For modified (unstaged) files, print the old and new BLAKE3
+        /// hashes as `<old> → <new>`
+        #[arg(long = "show-hash", short = 'H')]
+        show_hash: bool,
+
+        /// With --show-hash, print the full BLAKE3 hash instead of an
+        /// 8-character prefix
+        #[arg(long = "full-hash")]
+        full_hash: bool,
+    },
 
     /// Add files to the staging area (index)
     Add {

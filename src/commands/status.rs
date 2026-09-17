@@ -1,7 +1,35 @@
 use super::*;
+use crate::hash::{hash_file, hash_to_hex};
+use std::collections::HashMap;
+
+/// A tracked file that has been modified or deleted on disk.
+struct UnstagedFile {
+    path: String,
+    /// Most recently committed BLAKE3 hash for this path, if known.
+    old_hash: Option<String>,
+    /// Current on-disk BLAKE3 hash. `None` when the file was deleted or
+    /// when hashes were not requested.
+    new_hash: Option<String>,
+    /// Whether the file was deleted from disk.
+    deleted: bool,
+}
+
+/// Shorten a BLAKE3 hex hash to an 8-character prefix for display.
+fn display_hash(hex: &str, full: bool) -> String {
+    if full {
+        hex.to_string()
+    } else {
+        hex.chars().take(8).collect()
+    }
+}
 
 /// Show staged, unstaged, and untracked file status.
-pub fn status() -> Result<(), NgdarError> {
+///
+/// When `show_hash` is set, every modified (unstaged) file is annotated with
+/// the BLAKE3 hash recorded for it in the last commit and its current on-disk
+/// hash, as `<old> → <new>`. Pass `full_hash` to print the complete hashes
+/// instead of an 8-character prefix.
+pub fn status(show_hash: bool, full_hash: bool) -> Result<(), NgdarError> {
     let cwd = std::env::current_dir()?;
     let repo = Repository::find(&cwd)?;
     let ignore_rules = IgnoreRules::load(&repo.path)?;
@@ -17,10 +45,17 @@ pub fn status() -> Result<(), NgdarError> {
     let mut committed_files: Vec<String> = committed.iter().map(|(_, path)| path.clone()).collect();
     committed_files.dedup();
 
+    // Map each path to its most recent committed hash. The committed file is
+    // append-only, so the last occurrence of a path wins.
+    let mut committed_hash: HashMap<String, String> = HashMap::new();
+    for (hash, path) in &committed {
+        committed_hash.insert(path.clone(), hash.clone());
+    }
+
     // Determine unstaged: files that are in committed_files but modified on disk
     let cache_path = repo.cache_path();
     let cache = CacheStore::load(&cache_path)?;
-    let mut unstaged: Vec<String> = Vec::new();
+    let mut unstaged: Vec<UnstagedFile> = Vec::new();
 
     for rel_path in &committed_files {
         let full_path = repo.path.join(rel_path);
@@ -34,13 +69,28 @@ pub fn status() -> Result<(), NgdarError> {
             if cached_hash.is_none() {
                 // File changed (different size or mtime) or not in cache
                 if !staged.contains(rel_path) {
-                    unstaged.push(rel_path.clone());
+                    let new_hash = if show_hash {
+                        Some(hash_to_hex(&hash_file(&full_path)?))
+                    } else {
+                        None
+                    };
+                    unstaged.push(UnstagedFile {
+                        path: rel_path.clone(),
+                        old_hash: committed_hash.get(rel_path).cloned(),
+                        new_hash,
+                        deleted: false,
+                    });
                 }
             }
         } else {
             // File was deleted from disk
             if !staged.contains(rel_path) {
-                unstaged.push(format!("{} (deleted)", rel_path));
+                unstaged.push(UnstagedFile {
+                    path: rel_path.clone(),
+                    old_hash: committed_hash.get(rel_path).cloned(),
+                    new_hash: None,
+                    deleted: true,
+                });
             }
         }
     }
@@ -71,7 +121,20 @@ pub fn status() -> Result<(), NgdarError> {
     } else {
         println!("Unstaged files (modified on disk):");
         for f in &unstaged {
-            println!("   \x1b[33mM {}\x1b[0m", f);
+            if f.deleted {
+                println!("   \x1b[33mM {}\x1b[0m (deleted)", f.path);
+            } else if show_hash {
+                let old = f.old_hash.as_deref().unwrap_or("?");
+                let new = f.new_hash.as_deref().unwrap_or("?");
+                println!(
+                    "   \x1b[33mM {}\x1b[0m  {} → {}",
+                    f.path,
+                    display_hash(old, full_hash),
+                    display_hash(new, full_hash)
+                );
+            } else {
+                println!("   \x1b[33mM {}\x1b[0m", f.path);
+            }
         }
     }
     println!();
