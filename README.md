@@ -60,6 +60,26 @@ ngdar --version
 cargo install --git https://github.com/XavierTolza/ngdar.git
 ```
 
+### Via Docker
+
+Prebuilt images are published to [GHCR](https://ghcr.io) under
+`ghcr.io/xaviertolza/ngdar` for `linux/amd64` and `linux/arm64`
+(`latest` tracks `master`, `vX.Y.Z` tags track releases).
+
+```bash
+# Run in the directory you want to archive (mount it into the container):
+docker run --rm -v "$PWD:/work" ghcr.io/xaviertolza/ngdar init
+docker run --rm -v "$PWD:/work" ghcr.io/xaviertolza/ngdar add mydata/
+docker run --rm -v "$PWD:/work" ghcr.io/xaviertolza/ngdar commit --vol-id "DVD-001" -m "First archival session"
+```
+
+The image contains only the fully static `ngdar` binary (no base OS), just
+like the standalone Linux build. Local images are built with:
+
+```bash
+docker build -t ngdar .
+```
+
 ---
 
 ## 📖 Step-by-step guide
@@ -316,7 +336,9 @@ Releases are fully automated from the GitHub web UI — no local steps.
    - tags `master` with `v1.2.0`,
    - builds and publishes a GitHub Release with cross-platform binaries
      (Linux gnu/musl on x86_64/aarch64/armv7, macOS Intel/Apple Silicon,
-     Windows) plus `.deb` and `.rpm` packages.
+     Windows) plus `.deb` and `.rpm` packages,
+   - builds and pushes the Docker image (`linux/amd64` + `linux/arm64`)
+     to GHCR under `ghcr.io/xaviertolza/ngdar`.
 
 Versions ending in a pre-release suffix (e.g. `1.2.0-rc.1`) are published as
 GitHub pre-releases automatically.
