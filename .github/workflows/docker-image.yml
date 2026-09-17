@@ -1,0 +1,161 @@
+name: Docker image
+
+# Builds the OCI image from the `Dockerfile` (single static musl binary on a
+# `scratch` base) and pushes it to GHCR:
+#
+#   ghcr.io/<owner>/ngdar:latest        updated on every merge to master and
+#                                       on every release
+#   ghcr.io/<owner>/ngdar:sha-<commit>  per-commit image on master
+#   ghcr.io/<owner>/ngdar:<release>     versioned image, e.g. v1.2.0 / 1.2.0
+#
+# The image is built for linux/amd64 and linux/arm64 on native runners (no
+# QEMU emulation), and both platforms are merged into a single multi-arch
+# manifest by pushing the same tags.
+#
+# On pull requests the image is only built (and the build-time smoke test
+# run) — never pushed to GHCR, since PRs may come from forks with no
+# packages:write permission and would otherwise clutter the registry.
+#
+# The Release orchestrator (.github/workflows/release.yml) calls this workflow
+# through `workflow_call` because the release tag is pushed with the default
+# GITHUB_TOKEN, which does not re-trigger `push` workflows (GitHub's
+# anti-recursion rule).
+
+on:
+  push:
+    branches: [master]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Optional release tag to also publish (e.g. v1.2.0 or 1.2.0)"
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      ref:
+        description: "Git ref to build the image from."
+        required: false
+        type: string
+      release_tag:
+        description: "Release tag to tag the image with (e.g. v1.2.0)."
+        required: false
+        type: string
+
+concurrency:
+  group: docker-image-${{ github.ref || github.sha }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-and-push:
+    name: ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: linux/amd64, os: ubuntu-latest,    arch: amd64 }
+          - { platform: linux/arm64, os: ubuntu-24.04-arm, arch: arm64 }
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref || github.sha }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        # PR builds only validate the image, they never publish.
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image tags
+        env:
+          RELEASE_TAG_INPUT: ${{ inputs.release_tag }}
+          MANUAL_TAG: ${{ inputs.tag }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          # Docker/GHCR repository names must be lowercase; GITHUB_REPOSITORY
+          # keeps the owner's case (e.g. "XavierTolza/ngdar").
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
+          VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)"
+          SHORT_SHA="${GITHUB_SHA:0:7}"
+
+          # A release build is either requested explicitly (workflow_call /
+          # workflow_dispatch input) or triggered by a pushed v* tag.
+          RELEASE_TAG="${RELEASE_TAG_INPUT}"
+          if [ -z "$RELEASE_TAG" ] && [ "${GITHUB_EVENT_NAME}" = "push" ]; then
+            case "$GITHUB_REF" in
+              refs/tags/v*) RELEASE_TAG="${GITHUB_REF#refs/tags/}" ;;
+            esac
+          fi
+          if [ -z "$RELEASE_TAG" ] && [ -n "$MANUAL_TAG" ]; then
+            RELEASE_TAG="$MANUAL_TAG"
+          fi
+
+          PUSH=1
+          TAGS=()
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
+            # Pull requests only validate the image; they never publish.
+            PUSH=0
+            TAGS+=("$IMAGE:pr-${PR_NUMBER}")
+          elif [ -n "$RELEASE_TAG" ]; then
+            TAGS+=("$IMAGE:$RELEASE_TAG")
+            TAGS+=("$IMAGE:$VERSION")
+            TAGS+=("$IMAGE:latest")
+          else
+            TAGS+=("$IMAGE:sha-$SHORT_SHA")
+            if [ "$GITHUB_REF" = "refs/heads/master" ]; then
+              TAGS+=("$IMAGE:latest")
+            fi
+          fi
+
+          printf 'Event:      %s\n' "$GITHUB_EVENT_NAME"
+          printf 'Release tag:%s\n' "${RELEASE_TAG:-<none>}"
+          printf 'Push:       %s\n' "$PUSH"
+          printf 'Image tags: %s\n' "${TAGS[*]}"
+          printf 'VERSION:    %s\n' "$VERSION"
+
+          printf '%s\n' "${TAGS[@]}" > /tmp/ngdar-image-tags
+          printf '%s\n' "$VERSION" > /tmp/ngdar-version
+          printf '%s' "$PUSH" > /tmp/ngdar-push
+
+      - name: Build image (and push when publishing)
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -euo pipefail
+          VERSION="$(cat /tmp/ngdar-version)"
+          PUSH="$(cat /tmp/ngdar-push)"
+          ARGS=()
+          while IFS= read -r tag; do
+            ARGS+=(--tag "$tag")
+          done < /tmp/ngdar-image-tags
+
+          BUILD_ARGS=(
+            --platform "$PLATFORM"
+            --cache-from "type=gha,scope=ngdar-build-${{ matrix.arch }}"
+            --cache-to "type=gha,scope=ngdar-build-${{ matrix.arch }},mode=max"
+            --build-arg "VERSION=${VERSION}"
+            --build-arg "REVISION=${GITHUB_SHA}"
+            --build-arg "SOURCE_URL=https://github.com/${GITHUB_REPOSITORY}"
+            "${ARGS[@]}"
+          )
+          if [ "$PUSH" = "1" ]; then
+            BUILD_ARGS+=(--push)
+          fi
+          docker buildx build "${BUILD_ARGS[@]}" .

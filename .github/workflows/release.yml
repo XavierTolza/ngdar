@@ -14,6 +14,7 @@ name: Release
 #   4. Tags `master` with `vX.Y.Z`.
 #   5. Builds & publishes the GitHub Release (cross-platform binaries,
 #      .deb / .rpm packages).
+#   6. Builds & pushes the Docker image to GHCR (from the `vX.Y.Z` tag).
 #
 # The whole chain runs inside a single workflow run on purpose: events
 # created with the default GITHUB_TOKEN (tag pushed, PR opened/merged) do
@@ -240,3 +241,18 @@ jobs:
       tag: ${{ needs.tag.outputs.tag }}
     permissions:
       contents: write
+
+  # ───────────────────────────────────────────────
+  # 6. Build & push the Docker image to GHCR
+  # ───────────────────────────────────────────────
+  # Called explicitly (not driven by the tag `push` event) because the tag was
+  # pushed with GITHUB_TOKEN, which does not re-trigger `push` workflows.
+  docker-image:
+    needs: tag
+    uses: ./.github/workflows/docker-image.yml
+    with:
+      ref: refs/tags/${{ needs.tag.outputs.tag }}
+      release_tag: ${{ needs.tag.outputs.tag }}
+    permissions:
+      contents: read
+      packages: write
