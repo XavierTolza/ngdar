@@ -58,5 +58,10 @@ COPY --from=builder /build/target/release/ngdar /ngdar
 # Nice default working directory for a mounted data volume.
 WORKDIR /work
 
+# Build-time smoke test: fail the build if the binary does not run in this
+# empty image (e.g. accidentally linked against a libc that `scratch` lacks).
+# Exec-form RUN needs no shell, which `scratch` does not have.
+RUN ["/ngdar", "--version"]
+
 ENTRYPOINT ["/ngdar"]
 CMD ["--help"]
