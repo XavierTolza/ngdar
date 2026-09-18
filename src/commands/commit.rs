@@ -10,8 +10,7 @@ use crate::objects::{build_tree_from_index, write_object, Commit, Meta};
 pub fn commit(vol_id: &str, message: &str) -> Result<(), NgdarError> {
     let cwd = std::env::current_dir()?;
     let repo = Repository::find(&cwd)?;
-    let cache_path = repo.cache_path();
-    let mut cache = CacheStore::load(&cache_path)?;
+    let mut hasher = HashProxy::load(&repo.path, &repo.cache_path())?;
 
     // Read index
     let index = repo.read_index()?;
@@ -23,11 +22,6 @@ pub fn commit(vol_id: &str, message: &str) -> Result<(), NgdarError> {
 
     println!("Committing {} file(s)...", index.len());
     println!("Volume ID: {}", vol_id);
-
-    // Ensure cache directory exists for potential new entries
-    if let Some(parent) = cache_path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
 
     // Phase 1: Create Meta objects for each staged file
     let mut meta_hash_for_file: std::collections::HashMap<String, String> =
@@ -42,14 +36,7 @@ pub fn commit(vol_id: &str, message: &str) -> Result<(), NgdarError> {
         let perms = format_permissions(&metadata);
 
         // Get file hash (from cache if possible, or compute)
-        let binary_hash = if let Some(h) = cache.lookup(size, mtime, rel_str) {
-            h.to_string()
-        } else {
-            let hash = hash_file(&full_path)?;
-            let hex = hash_to_hex(&hash);
-            cache.insert(size, mtime, hex.clone(), rel_str.to_string());
-            hex
-        };
+        let binary_hash = hasher.hash(rel_str)?;
 
         committed_entries.push((binary_hash.clone(), rel_str.clone()));
 
@@ -69,7 +56,7 @@ pub fn commit(vol_id: &str, message: &str) -> Result<(), NgdarError> {
     }
 
     // Save updated cache
-    cache.save()?;
+    hasher.save()?;
 
     // Phase 2: Build Tree objects from the staged files
     let staged_refs: Vec<(&str, &str)> = meta_hash_for_file

@@ -1,5 +1,4 @@
 use super::*;
-use crate::hash::{hash_file, hash_to_hex};
 use std::collections::HashMap;
 
 /// A tracked file that has been modified or deleted on disk.
@@ -60,8 +59,7 @@ pub fn status(show_hash: bool, full_hash: bool) -> Result<(), NgdarError> {
     // another machine. A cache miss therefore does NOT prove that a file
     // changed: verify against the hash recorded in `.ngdar/committed` at the
     // file's most recent commit, and re-seed the cache when they match.
-    let cache_path = repo.cache_path();
-    let mut cache = CacheStore::load(&cache_path)?;
+    let mut hasher = HashProxy::load(&repo.path, &repo.cache_path())?;
     let mut cache_updated = false;
     let mut unstaged: Vec<UnstagedFile> = Vec::new();
 
@@ -80,23 +78,20 @@ pub fn status(show_hash: bool, full_hash: bool) -> Result<(), NgdarError> {
             continue;
         }
 
-        let metadata = std::fs::metadata(&full_path)?;
-        let size = metadata.len();
-        let mtime = get_mtime(&metadata);
-
         // Fast path: size/mtime unchanged since the last hash we recorded.
-        if cache.lookup(size, mtime, rel_path).is_some() {
+        if hasher.cached_hash(rel_path).is_some() {
             continue;
         }
         if staged.contains(rel_path) {
             continue;
         }
 
-        // Cache miss: the file may still be unchanged. Compare its actual
-        // hash with the one archived at its most recent commit.
-        let hex = hash_to_hex(&hash_file(&full_path)?);
+        // Cache miss: the file may still be unchanged. Compute its actual
+        // hash (without touching the cache) and compare it with the one
+        // archived at its most recent commit.
+        let hex = hasher.compute(rel_path)?;
         if committed_hash.get(rel_path).map(String::as_str) == Some(hex.as_str()) {
-            cache.insert(size, mtime, hex, rel_path.clone());
+            hasher.record(rel_path, hex)?;
             cache_updated = true;
         } else {
             unstaged.push(UnstagedFile {
@@ -109,7 +104,7 @@ pub fn status(show_hash: bool, full_hash: bool) -> Result<(), NgdarError> {
     }
 
     if cache_updated {
-        cache.save()?;
+        hasher.save()?;
     }
 
     // Untracked files

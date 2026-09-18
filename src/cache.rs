@@ -13,7 +13,10 @@ use std::path::{Path, PathBuf};
 pub struct CacheEntry {
     /// File size in bytes.
     pub size: u64,
-    /// File modification time (Unix timestamp, seconds since epoch).
+    /// File modification time (Unix timestamp in nanoseconds since epoch).
+    ///
+    /// Sub-second resolution is deliberate: it distinguishes two rewrites of an
+    /// equally-sized file that happen within the same second.
     pub mtime: i64,
     /// BLAKE3 hash of the file contents (64-char hex string).
     pub hash: String,
