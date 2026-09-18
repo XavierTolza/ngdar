@@ -431,8 +431,26 @@ pub fn build_tree_from_index(
     let mut tree_cache: std::collections::HashMap<String, String> =
         std::collections::HashMap::new();
 
-    // Get all unique directory paths sorted longest-first (bottom-up)
-    let mut dir_paths: Vec<String> = dirs.keys().cloned().collect();
+    // Every ancestor directory of a staged file needs its own Tree object, even
+    // when it holds no file directly. Without this, a commit whose files all
+    // live in subdirectories would never produce a root Tree, so the commit
+    // would appear to reference no files at all.
+    let mut dir_paths: Vec<String> = Vec::new();
+    for dir_path in dirs.keys() {
+        let mut current = dir_path.as_str();
+        loop {
+            dir_paths.push(current.to_string());
+            match current.rsplit_once('/') {
+                Some((parent, _)) => current = parent,
+                None => {
+                    dir_paths.push(String::new());
+                    break;
+                }
+            }
+        }
+    }
+    dir_paths.sort();
+    dir_paths.dedup();
     dir_paths.sort_by_key(|a| std::cmp::Reverse(a.len())); // reverse sort
 
     for dir_path in &dir_paths {
