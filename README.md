@@ -116,6 +116,18 @@ Three categories are shown:
 | 🔶 **Unstaged** | Modified on disk but not re-staged |
 | ❓ **Untracked** | New file not yet tracked |
 
+For modified (unstaged) files, `ngdar status --show-hash` (`-H`) also prints
+the BLAKE3 hash recorded in the last commit and the current on-disk hash, as
+`<old> → <new>`:
+
+```bash
+ngdar status --show-hash
+   M README.txt  d6f952bb → 9c2038d6
+```
+
+Only an 8-character prefix is shown by default; add `--full-hash` to print the
+complete 64-character hashes.
+
 ### 4. Record a commit
 
 ```bash
@@ -265,7 +277,7 @@ Added vacation photos
 |---|---|
 | `ngdar init` | Initialize a repository in the current directory |
 | `ngdar add <paths>` | Stage files for the next commit |
-| `ngdar status` | Show staged, unstaged, and untracked files |
+| `ngdar status [-H|--show-hash] [--full-hash]` | Show staged, unstaged, and untracked files; `--show-hash` also prints the old → new BLAKE3 hash for each modified file (`--full-hash` prints the complete hashes) |
 | `ngdar commit --vol-id <ID> -m <msg>` | Record staged files as a commit (no archive) |
 | `ngdar pack <target> --out <archive> [-v]` | Create a TAR archive for a commit, volume ID, or `from..to` range (progress bar; `-v` lists each file) |
 | `ngdar log [hash]` | List commits or show files in a commit |
