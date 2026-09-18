@@ -25,6 +25,8 @@ pub mod config;
 pub mod error;
 /// BLAKE3 hashing for files, strings, and hex output.
 pub mod hash;
+/// Cache-aware hash proxy — the single entry point for file hashes.
+pub mod hasher;
 /// `.ngdarignore` pattern matching and untracked file listing.
 pub mod ignore;
 /// Content-addressable objects: Meta, Tree, Commit.

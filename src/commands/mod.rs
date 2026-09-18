@@ -3,10 +3,9 @@
 //! The [`crate::commands`] module re-exports all public command functions.
 //! Shared helper utilities used by multiple commands live here.
 
-use crate::cache::CacheStore;
 use crate::config::Repository;
 use crate::error::NgdarError;
-use crate::hash::{hash_file, hash_to_hex};
+use crate::hasher::{mtime_secs, HashProxy};
 use crate::ignore::{self, IgnoreRules};
 use crate::objects;
 use indicatif::{ProgressBar, ProgressStyle};
@@ -42,12 +41,7 @@ fn format_permissions(_metadata: &std::fs::Metadata) -> u32 {
 }
 
 fn get_mtime(metadata: &std::fs::Metadata) -> i64 {
-    metadata
-        .modified()
-        .ok()
-        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0)
+    mtime_secs(metadata)
 }
 
 /// Format a byte count as a human-readable string (B, KB, MB, GB).
@@ -183,6 +177,7 @@ fn append_meta_files_to_tar(
     use std::io::IsTerminal;
 
     let is_tty = std::io::stdout().is_terminal();
+    let hasher = HashProxy::load(&repo.path, &repo.cache_path())?;
     let mut written = 0u64;
     let mut warnings = 0u64;
     for (meta_hash, _rel_path) in meta_refs {
@@ -196,7 +191,10 @@ fn append_meta_files_to_tar(
             warnings += 1;
             continue;
         }
-        let actual_hex = hash_to_hex(&hash_file(&full_path)?);
+        // Verify on-disk content matches the archived hash. `compute` reads the
+        // file and deliberately does not write the cache: recording a hash here
+        // could hide an uncommitted modification from a later `status`.
+        let actual_hex = hasher.compute(&meta.path)?;
         if actual_hex != meta.binary_hash {
             eprintln!(
                 "Warning: '{}' has been modified (hash mismatch), skipping",

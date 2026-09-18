@@ -28,7 +28,10 @@ fn main() {
 
     let result = match &cli.command {
         Commands::Init => commands::init(),
-        Commands::Status => commands::status(),
+        Commands::Status {
+            show_hash,
+            full_hash,
+        } => commands::status(*show_hash, *full_hash),
         Commands::Add { paths } => commands::add(paths),
         Commands::Commit { vol_id, message } => commands::commit(vol_id, message),
         Commands::Pack {
